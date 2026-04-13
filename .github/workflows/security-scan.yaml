@@ -1,0 +1,39 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * 0"
+
+jobs:
+  grype:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Create virtual environment and install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          make install
+
+      - name: Download Grype
+        uses: anchore/scan-action/download-grype@v3
+        id: grype
+        with:
+          grype-version: v0.103.0
+
+      - name: Run Grype security scan
+        run: ${{steps.grype.outputs.cmd}} --name openfilter -o table --fail-on critical --only-fixed dir:.
