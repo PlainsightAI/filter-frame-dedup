@@ -10,5 +10,35 @@ on:
     - cron: '0 0 * * 0'
 
 jobs:
-  scan:
-    uses: PlainsightAI/gh-actions-public/.github/workflows/security-scan.yaml@main
+  grype:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - name: "PreAction Disk-Cleanup"
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo docker builder prune -a
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Create virtual environment and install dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          make install
+
+      - name: Download Grype
+        uses: anchore/scan-action/download-grype@v3
+        id: grype
+        with:
+          grype-version: v0.103.0
+
+      - name: Run Grype security scan
+        run: ${{steps.grype.outputs.cmd}} --name ${{ github.event.repository.name }} -o table --fail-on critical --only-fixed dir:.
