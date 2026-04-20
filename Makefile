@@ -2,6 +2,8 @@
 # Repo-specific variables
 # ---------------------------------
 
+IMAGE ?= plainsightai/openfilter-frame-dedup
+
 # Define these variables for consistency in the repo
 REPO_NAME ?= filter-frame-dedup
 REPO_NAME_SNAKECASE ?= filter_frame_dedup

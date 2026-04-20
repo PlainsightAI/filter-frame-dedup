@@ -1,0 +1,13 @@
+name: Create Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: PlainsightAI/gh-actions-public/.github/workflows/filter-release.yaml@main
+    with:
+      docker_image: plainsightai/openfilter-frame-dedup
+    secrets:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

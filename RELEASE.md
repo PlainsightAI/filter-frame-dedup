@@ -3,6 +3,13 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.1.2 - 2026-04-15
+
+### Changed
+- Add CI/CD workflows: create-release.yaml (Docker Hub publishing), ci.yaml (PR testing), security-scan.yaml
+- Bump openfilter dependency to >=0.1.27
+
+
 ## v1.1.1 - 2025-09-27
 
 ### Changed

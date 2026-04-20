@@ -1,0 +1,14 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  scan:
+    uses: PlainsightAI/gh-actions-public/.github/workflows/security-scan.yaml@main

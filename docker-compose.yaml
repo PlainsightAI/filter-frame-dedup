@@ -1,6 +1,6 @@
 services:
   video_in:
-    image: containers.openfilter.io/plainsightai/openfilter-video-in:v0.1.10
+    image: containers.openfilter.io/plainsightai/openfilter-video-in:0.1.27
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-}
       FILTER_ID: VideoIn
@@ -10,7 +10,7 @@ services:
       - ./data/sample-video.mp4:/video.mp4:ro
 
   frame_dedup_filter:
-    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:v1.1.1
+    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.2
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-}
       FILTER_ID: FrameDedupFilter
@@ -19,7 +19,7 @@ services:
       FILTER_OUTPUT_FOLDER: ./output
 
   webvis:
-    image: containers.openfilter.io/plainsightai/openfilter-webvis:v0.1.10
+    image: containers.openfilter.io/plainsightai/openfilter-webvis:0.1.27
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-}
       FILTER_ID: Webvis
