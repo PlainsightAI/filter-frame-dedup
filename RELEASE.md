@@ -3,6 +3,13 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.1.3 - 2026-04-20
+
+### Changed
+- Remove redundant ci.yaml (shared workflow handles PR testing)
+- Add push + pull_request triggers to create-release.yaml
+
+
 ## v1.1.2 - 2026-04-15
 
 ### Changed
