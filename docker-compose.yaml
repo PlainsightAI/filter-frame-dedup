@@ -1,28 +1,28 @@
 services:
   video_in:
-    image: containers.openfilter.io/plainsightai/openfilter-video-in:0.1.27
+    image: containers.openfilter.io/plainsightai/openfilter-video-inopenfilter-frame-dedup:1.1.3
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
       FILTER_ID: VideoIn
       FILTER_SOURCES: file:///video.mp4!sync!loop
       FILTER_OUTPUTS: tcp://*
     volumes:
-      - ./data/sample-video.mp4:/video.mp4:ro
+      - ./data/sample-video.mp4:/video.mp4openfilter-frame-dedup:1.1.3
 
   frame_dedup_filter:
-    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.2
+    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.3
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
       FILTER_ID: FrameDedupFilter
       FILTER_SOURCES: tcp://video_in
       FILTER_OUTPUTS: tcp://*
       FILTER_OUTPUT_FOLDER: ./output
 
   webvis:
-    image: containers.openfilter.io/plainsightai/openfilter-webvis:0.1.27
+    image: containers.openfilter.io/plainsightai/openfilter-webvisopenfilter-frame-dedup:1.1.3
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
       FILTER_ID: Webvis
       FILTER_SOURCES: tcp://frame_dedup_filter
     ports:
-      - 8001:8000
+      - 8001openfilter-frame-dedup:1.1.3
