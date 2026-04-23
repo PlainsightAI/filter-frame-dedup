@@ -13,5 +13,5 @@ jobs:
     with:
       docker_image: plainsightai/openfilter-frame-dedup
     secrets:
-      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      PYPI_API_TOKEN: ${{ secrets.PLAINSIGHT_PYPI_TOKEN }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}

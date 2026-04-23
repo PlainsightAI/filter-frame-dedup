@@ -1,3 +1,8 @@
+# v1.1.4
+
+- Fix release workflow secret names: `PYPI_API_TOKEN` → `PLAINSIGHT_PYPI_TOKEN`, `DOCKERHUB_TOKEN` → `DOCKERHUB_ACCESS_TOKEN` (org-level secret names). Without this the PyPI / Docker Hub tokens resolved to empty and no package has been published since the migration.
+- Bump openfilter dependency to `>=0.1.30`.
+
 # Changelog
 FrameSelect release notes
 
