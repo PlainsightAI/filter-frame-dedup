@@ -12,6 +12,11 @@ jobs:
     uses: PlainsightAI/gh-actions-public/.github/workflows/filter-release.yaml@main
     with:
       docker_image: plainsightai/openfilter-frame-dedup
+      source-paths: |
+        filter_*/**
+        pyproject.toml
+        Dockerfile*
+        requirements*.txt
     secrets:
       PYPI_API_TOKEN: ${{ secrets.PLAINSIGHT_PYPI_TOKEN }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
