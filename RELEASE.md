@@ -16,6 +16,7 @@ FrameSelect release notes
 ### Changed
 
 - Bump openfilter to 1.1.0
+- Bump openfilter to 1.1.1
 
 ## v1.1.3 - 2026-04-20
 
