@@ -26,7 +26,13 @@ dynamic = ["version"]
 
 dependencies = [
   "scikit-image==0.25.2",
-  "openfilter[all]>=1.1.1,<2.0.0"
+  "openfilter[all]>=1.1.1,<2.0.0",
+  "transformers>=4.56.0",
+  "torch>=2.0.0",
+  "opencv-python-headless>=4.7",
+  "safetensors>=0.3",
+  "huggingface-hub>=0.14",
+  "torchvision"
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.4
+FROM python:3.11-slim
+
+# Keep Python quiet and limit parallelism for deterministic behavior
+ENV PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONUNBUFFERED=1 \
+        OMP_NUM_THREADS=1 \
+        OPENBLAS_NUM_THREADS=1 \
+        MKL_NUM_THREADS=1 \
+        NUMEXPR_NUM_THREADS=1 \
+        PYTHONPATH=/app
+
+RUN useradd -ms /bin/bash appuser
+WORKDIR /app
+
+# Install small set of system deps commonly required by vision libs
+RUN set -eux; \
+        apt-get update && apt-get install -y --no-install-recommends \
+            ca-certificates \
+            build-essential \
+            git \
+            ffmpeg \
+            libgl1 \
+            libglib2.0-0 \
+            libsm6 \
+            libxext6 \
+            libxrender1 \
+        && rm -rf /var/lib/apt/lists/*
+
+# Install runtime python dependencies (explicit for dev image)
+RUN set -eux; \
+        pip install --no-cache-dir --upgrade pip setuptools wheel && \
+        pip install --no-cache-dir \
+            "scikit-image==0.25.2" \
+            "openfilter[all]>=1.1.1,<2.0.0" \
+            "transformers>=4.56.0" \
+            "torch>=2.0.0" \
+            "huggingface-hub>=0.14.0" \
+            "torchvision>=0.15.0" \
+            "Pillow>=9.0.0" \
+            "opencv-python-headless>=4.7.0" \
+            "safetensors>=0.3.0"
+
+# Copy local source into the image for editable development. We rely on PYTHONPATH
+# so you can iterate locally by rebuilding or by bind-mounting at runtime.
+COPY --chown=appuser:appuser . /app
+
+# Create logs directory and set ownership
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
+
+USER appuser
+CMD ["python", "-m", "filter_frame_dedup.filter"]
