@@ -142,6 +142,9 @@ class FilterFrameDedup(Filter):
         self.processed_frame_count = 0
         self.frame_count = 1
         
+        if config.save_images and not os.path.exists(config.output_folder):
+            os.makedirs(config.output_folder)
+            
         if self.config.use_model_dedup:
             logger.info("Model-based deduplication is enabled. Initializing ModelProcessor...")
             try:
