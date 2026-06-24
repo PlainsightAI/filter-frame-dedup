@@ -2,7 +2,6 @@ import logging, os, cv2, time
 from openfilter.filter_runtime.filter import FilterConfig, Filter, Frame
 from filter_frame_dedup.hash_processor import HashFrameProcessor
 from filter_frame_dedup.ssim_processor import SSIMProcessor
-from filter_frame_dedup.model_processor import ModelProcessor
 
 __all__ = ["FilterFrameDedupConfig", "FilterFrameDedup"]
 
@@ -24,10 +23,10 @@ class FilterFrameDedupConfig(FilterConfig):
     forward_deduped_frames:             bool = False                       # Forward deduplicated frames in a side channel
     forward_upstream_data:              bool = True                         # Forward data from upstream filters
     
-    use_model_dedup:                    bool = False                       # Whether to use a model-based deduplication method (not implemented yet)
-    model_dedup_threshold:              float = 0.9                         # Threshold for model-based deduplication (not implemented yet)
-    model_hf_id:                        str = "facebook/dinov3-vits16-pretrain-lvd1689m"                         # Hugging Face model path for deduplication model (not implemented yet)
-    model_input_size:                   int = 224                           # Input size for the deduplication model (not implemented yet)
+    use_model_dedup:                    bool = False                       # Whether to use a model-based deduplication method
+    model_dedup_threshold:              float = 0.9                         # Threshold for model-based deduplication
+    model_hf_id:                        str = "facebook/dinov3-vits16-pretrain-lvd1689m"                         # Hugging Face model path for deduplication model
+    model_input_size:                   int = 224                           # Input size for the deduplication model
     
 class FilterFrameDedup(Filter):
     """
@@ -147,6 +146,8 @@ class FilterFrameDedup(Filter):
             
         if self.config.use_model_dedup:
             logger.info("Model-based deduplication is enabled. Initializing ModelProcessor...")
+            from filter_frame_dedup.model_processor import ModelProcessor
+            
             try:
                 self.model_processor = ModelProcessor(config)
             except Exception as e:
@@ -208,13 +209,14 @@ class FilterFrameDedup(Filter):
             # Then check if frame should be saved based on SSIM
             if self.ssim_processor.should_save_frame(processed_image):
                 frame_path = None
-                logger.info("Frame passed SSIM check")
-                processed_image_rgb = main_frame.rw_rgb.image.copy()  # For model processing
+                if self.config.debug:
+                    logger.info("Frame passed SSIM check")
                 if not self.config.use_model_dedup or self.model_processor.frame_is_unique(processed_image_rgb):
-                    
+                    processed_image_rgb = main_frame.rw_rgb.image.copy()  # For model processing
+
                     # Save frame to disk only if save_images is enabled
-                    if self.config.use_model_dedup:
-                        logger.info("Frame passed model deduplication check")
+                    if self.config.use_model_dedup and self.config.debug:
+                            logger.info("Frame passed model deduplication check")
                         
                     if self.config.save_images:
                         frame_path = os.path.join(self.config.output_folder, f"frame_{self.frame_count:06d}.jpg")

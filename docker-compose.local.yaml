@@ -7,7 +7,7 @@ services:
       FILTER_SOURCES: file:///video.mp4!sync
       FILTER_OUTPUTS: tcp://*
     volumes:
-      - ./data/patty_steak.mp4:/video.mp4:ro
+      - ./data/sample_video.mp4:/video.mp4:ro
 
   frame_dedup_filter:
     build:
