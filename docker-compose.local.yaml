@@ -15,7 +15,6 @@ services:
       dockerfile: Dockerfile.dev
     image: filter-frame-dedup:local
     pull_policy: never
-    user: ${UID}:${GID}
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       FILTER_ID: FrameDedupFilter
@@ -27,7 +26,6 @@ services:
       FILTER_USE_MODEL_DEDUP: "true"
       FILTER_MODEL_DEDUP_THRESHOLD: 0.92
       FILTER_MODEL_HF_ID: "facebook/dinov3-vits16-pretrain-lvd1689m"
-      # FILTER_MODEL_HF_ID: "facebook/dinov2-small"
       HF_TOKEN: ${HF_TOKEN}
       HF_HUB_OFFLINE: 0
     volumes:
