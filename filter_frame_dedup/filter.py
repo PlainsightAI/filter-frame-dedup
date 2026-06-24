@@ -26,7 +26,6 @@ class FilterFrameDedupConfig(FilterConfig):
     use_model_dedup:                    bool = False                       # Whether to use a model-based deduplication method
     model_dedup_threshold:              float = 0.9                         # Threshold for model-based deduplication
     model_hf_id:                        str = "facebook/dinov3-vits16-pretrain-lvd1689m"                         # Hugging Face model path for deduplication model
-    model_input_size:                   int = 224                           # Input size for the deduplication model
     
 class FilterFrameDedup(Filter):
     """
@@ -66,8 +65,7 @@ class FilterFrameDedup(Filter):
                 config['roi'] = tuple(map(int, roi_str.split(', ')))
             if 'model_dedup_threshold' in config and isinstance(config['model_dedup_threshold'], str):
                 config['model_dedup_threshold'] = float(config['model_dedup_threshold'])
-            if 'model_input_size' in config and isinstance(config['model_input_size'], str):
-                config['model_input_size'] = int(config['model_input_size'])
+           
         # Convert to FilterFrameDedupConfig
         config = FilterFrameDedupConfig(**config)
         
