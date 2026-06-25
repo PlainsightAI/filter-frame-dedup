@@ -38,6 +38,9 @@ dev = [
   "wheel==0.44.0",
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
+
+  # duplicate here to ensure tests are passing
+  "torch>=2.0.0",
 ]
 
 model = [
