@@ -41,6 +41,10 @@ dev = [
 
   # duplicate here to ensure tests are passing
   "torch>=2.0.0",
+  "transformers>=4.56.0",
+  "torchvision", 
+  "safetensors>=0.3",
+  "huggingface-hub>=0.14",
 ]
 
 model = [
