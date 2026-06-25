@@ -11,7 +11,7 @@ class ModelProcessor:
             raise ValueError("Model deduplication is disabled in the configuration. ModelProcessor should not be initialized.")
         
         self.model_dedup_threshold = config.model_dedup_threshold
-        
+        self.roi = config.roi
         try:
             self.model = AutoModel.from_pretrained(config.model_hf_id)
             self.processor = AutoImageProcessor.from_pretrained(config.model_hf_id)
@@ -25,6 +25,10 @@ class ModelProcessor:
     
     
     def _extract_cls_token_feats(self, image: np.ndarray):
+        if self.roi:
+            x, y, w, h = self.roi
+            image = image[y:y+h, x:x+w]
+        
         inputs = self.processor(images=image, return_tensors="pt")
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
         with torch.no_grad():
@@ -53,12 +57,12 @@ class ModelProcessor:
         
     def frame_is_unique(self, image: np.ndarray) -> bool:
         """
-        Determines if the given frame is unique based on the model features and the configured threshold.
+        Determines if the given image is unique based on the model features and the configured threshold.
 
         Args:
-            frame: The input frame to be evaluated.
+            image: The input image to be evaluated.
         Returns:
-            bool: True if the frame is unique, False otherwise.
+            bool: True if the image is unique, False otherwise.
         """
    
         

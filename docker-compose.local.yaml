@@ -7,7 +7,7 @@ services:
       FILTER_SOURCES: file:///video.mp4!sync
       FILTER_OUTPUTS: tcp://*
     volumes:
-      - ./data/sample_video.mp4:/video.mp4:ro
+      - ./data/sample-video.mp4:/video.mp4:ro
 
   frame_dedup_filter:
     build:
@@ -29,8 +29,7 @@ services:
       HF_TOKEN: ${HF_TOKEN}
       HF_HUB_OFFLINE: 0
     volumes:
-      - ./output/model_mintime0_dinov3_patty_steak:/output
-      # - ./filter_frame_dedup/filter.py:/app/filter_frame_dedup/filter.py:rw
+      - ./output:/output
   webvis:
     image: containers.openfilter.io/plainsightai/openfilter-webvis:v0.1.10
     environment:

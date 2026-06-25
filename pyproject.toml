@@ -27,12 +27,7 @@ dynamic = ["version"]
 dependencies = [
   "scikit-image==0.25.2",
   "openfilter[all]>=1.1.1,<2.0.0",
-  "transformers>=4.56.0",
-  "torch>=2.0.0",
   "opencv-python-headless>=4.7",
-  "safetensors>=0.3",
-  "huggingface-hub>=0.14",
-  "torchvision"
 ]
 
 [project.optional-dependencies]
@@ -43,6 +38,14 @@ dev = [
   "wheel==0.44.0",
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
+]
+
+model = [
+  "torch>=2.0.0",
+  "transformers>=4.56.0",
+  "torchvision", 
+  "safetensors>=0.3",
+  "huggingface-hub>=0.14",
 ]
 
 [[tool.uv.index]]
