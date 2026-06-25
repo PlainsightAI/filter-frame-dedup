@@ -10,7 +10,6 @@ class ModelProcessor:
         if not config.use_model_dedup:
             raise ValueError("Model deduplication is disabled in the configuration. ModelProcessor should not be initialized.")
         
-        self.model_input_size = config.model_input_size
         self.model_dedup_threshold = config.model_dedup_threshold
         
         try:

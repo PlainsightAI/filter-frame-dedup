@@ -93,12 +93,16 @@ class TestSmokeSimple:
             'motion_threshold': 1200,
             'min_time_between_frames': 1.0,
             'ssim_threshold': 0.90,
-            'output_folder': '/tmp/test'
+            'output_folder': '/tmp/test',
+            'model_hf_id': 'facebook/dinov2-small',  # use dinov2 small for testing
+            'model_dedup_threshold': 0.9,
+            'use_model_dedup': True
         }
         
         config = FilterFrameDedup.normalize_config(valid_config)
         assert config.hash_threshold == 5
         assert config.motion_threshold == 1200
+        assert config.model_dedup_threshold == 0.9
         
         # Test configuration with typo - should not raise error anymore
         config_with_typo = {
@@ -125,7 +129,10 @@ class TestSmokeSimple:
             'output_folder': temp_workdir,
             'debug': True,
             'forward_deduped_frames': True,
-            'forward_upstream_data': True
+            'forward_upstream_data': True, 
+            'use_model_dedup': True,
+            'model_hf_id': 'facebook/dinov2-small',  # use dinov2 small for testing
+            'model_dedup_threshold': 0.9
         }
         
         config = FilterFrameDedup.normalize_config(config_data)
@@ -161,7 +168,7 @@ class TestSmokeSimple:
             'output_folder': temp_workdir,
             'debug': True,
             'forward_deduped_frames': True,
-            'forward_upstream_data': True
+            'forward_upstream_data': True, 
         }
         
         config = FilterFrameDedup.normalize_config(config_data)
@@ -201,7 +208,10 @@ class TestSmokeSimple:
             'output_folder': temp_workdir,
             'debug': True,
             'forward_deduped_frames': True,
-            'forward_upstream_data': True
+            'forward_upstream_data': True, 
+            'use_model_dedup': True,
+            'model_hf_id': 'facebook/dinov2-small',  # use dinov2 small for testing
+            'model_dedup_threshold': 0.9 # low threshold to ensure different frames are considered unique
         }
         
         config = FilterFrameDedup.normalize_config(config_data)
@@ -210,7 +220,9 @@ class TestSmokeSimple:
         
         # Create two different frames
         image1 = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
-        image2 = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
+        # use black image not random so model features are different
+        image2 = np.zeros((500, 500, 3), dtype=np.uint8)
+        
         frame1 = Frame(image1, {"meta": {"id": 1}}, 'BGR')
         frame2 = Frame(image2, {"meta": {"id": 2}}, 'BGR')
         

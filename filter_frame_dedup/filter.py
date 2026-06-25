@@ -209,8 +209,7 @@ class FilterFrameDedup(Filter):
                 frame_path = None
                 if self.config.debug:
                     logger.info("Frame passed SSIM check")
-                if not self.config.use_model_dedup or self.model_processor.frame_is_unique(processed_image_rgb):
-                    processed_image_rgb = main_frame.rw_rgb.image.copy()  # For model processing
+                if not self.config.use_model_dedup or self.model_processor.frame_is_unique(main_frame.rw_rgb.image.copy()):
 
                     # Save frame to disk only if save_images is enabled
                     if self.config.use_model_dedup and self.config.debug:
