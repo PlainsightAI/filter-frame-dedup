@@ -261,8 +261,7 @@ class FilterFrameDedup(Filter):
                             deduped_frame.data['saved_path'] = frame_path
                         else:
                             deduped_frame.data['saved_path'] = None
-                        deduped_frame.data['original_frame_id'] = getattr(main_frame.data, 'id', None) if main_frame.data else None
-                        
+                        deduped_frame.data['original_frame_id'] = main_frame.data.get('meta', {}).get('id') if main_frame.data else None                        
                         output_frames['deduped'] = deduped_frame
                         
                         if self.config.debug:

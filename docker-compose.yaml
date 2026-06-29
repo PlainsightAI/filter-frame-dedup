@@ -2,7 +2,7 @@ services:
   video_in:
     image: containers.openfilter.io/plainsightai/openfilter-video-inopenfilter-frame-dedup:1.1.3
     environment:
-      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFOs}
       FILTER_ID: VideoIn
       FILTER_SOURCES: file:///video.mp4!sync!loop
       FILTER_OUTPUTS: tcp://*
@@ -12,7 +12,7 @@ services:
   frame_dedup_filter:
     image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.5
     environment:
-      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       FILTER_ID: FrameDedupFilter
       FILTER_SOURCES: tcp://video_in
       FILTER_OUTPUTS: tcp://*
@@ -21,7 +21,7 @@ services:
   webvis:
     image: containers.openfilter.io/plainsightai/openfilter-webvisopenfilter-frame-dedup:1.1.3
     environment:
-      LOG_LEVEL: ${LOG_LEVELopenfilter-frame-dedup:1.1.3}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       FILTER_ID: Webvis
       FILTER_SOURCES: tcp://frame_dedup_filter
     ports:
