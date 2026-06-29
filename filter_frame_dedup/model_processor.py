@@ -52,7 +52,7 @@ class ModelProcessor:
         if norm1 == 0 or norm2 == 0:
             return 0.0
         similarity = np.dot(feat1, feat2) / (norm1 * norm2)
-        return similarity
+        return float(similarity)
             
         
     def frame_is_unique(self, image: np.ndarray) -> bool:

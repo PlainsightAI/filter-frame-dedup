@@ -24,6 +24,8 @@ class FilterFrameDedupConfig(FilterConfig):
     forward_upstream_data:              bool = True                         # Forward data from upstream filters
     
     use_model_dedup:                    bool = False                       # Whether to use a model-based deduplication method
+    
+    # although cosine similarity ranges from -1 to 1, we only care about positive similarity for deduplication, so we set the threshold between 0 and 1
     model_dedup_threshold:              float = 0.9                         # Threshold for model-based deduplication
     model_hf_id:                        str = "facebook/dinov3-vits16-pretrain-lvd1689m"                         # Hugging Face model path for deduplication model
     

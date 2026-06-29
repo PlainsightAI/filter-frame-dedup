@@ -9,11 +9,10 @@ import pytest
 import numpy as np
 import tempfile
 import os
-import time
 from unittest.mock import patch, MagicMock
 from openfilter.filter_runtime.filter import Frame
 from filter_frame_dedup.filter import FilterFrameDedup, FilterFrameDedupConfig
-import torch
+
 
 class TestSmokeSimple:
     """Test basic filter functionality and lifecycle."""
@@ -34,6 +33,7 @@ class TestSmokeSimple:
     @pytest.fixture
     def stub_hf_model(self):
         """Stubs out Hugging Face network and inference calls for ModelProcessor."""
+        import torch
         # Target the exact location where these are imported in your code
         with patch('filter_frame_dedup.model_processor.AutoModel.from_pretrained') as mock_model, \
             patch('filter_frame_dedup.model_processor.AutoImageProcessor.from_pretrained') as mock_processor:
@@ -47,9 +47,9 @@ class TestSmokeSimple:
             mock_model_instance = MagicMock()
             mock_outputs = MagicMock()
             
-            # Your code looks for outputs.last_hidden_state[:, 0, :]
-            # Providing a (1, 1, 128) shape satisfies the slicing and squeezing
-            mock_outputs.last_hidden_state = torch.zeros(1, 1, 128) 
+            # Providing a non-zero shape (1, 1, 128) satisfies slicing/squeezing
+            # and prevents triggering zero-norm guards in similarity math.
+            mock_outputs.last_hidden_state = torch.ones(1, 1, 128) 
             mock_model_instance.return_value = mock_outputs
             
             mock_model.return_value = mock_model_instance
@@ -81,7 +81,6 @@ class TestSmokeSimple:
         # Test filter initialization
         filter_instance = FilterFrameDedup(config=config)
         assert filter_instance is not None
-        # The config is stored internally, so we just verify the filter was created
 
     def test_setup_and_shutdown(self, temp_workdir):
         """Test that setup() and shutdown() work correctly."""
@@ -162,7 +161,7 @@ class TestSmokeSimple:
         
         config = FilterFrameDedup.normalize_config(config_data)
         filter_instance = FilterFrameDedup(config=config)
-        filter_instance.setup(config) # Runs instantly now!
+        filter_instance.setup(config) 
         
         # Process first frame
         frames = {"main": sample_frame}
@@ -201,13 +200,10 @@ class TestSmokeSimple:
         # Process same frame again (should be considered duplicate)
         output_frames = filter_instance.process(frames)
         
-        # Verify output
+        # Verify output explicitly ensures the deduped channel is absent
         assert "main" in output_frames
-        # Deduped channel is only present when frame is actually saved
-        if "deduped" in output_frames:
-            assert len(output_frames) == 2  # Main and deduped frames
-        else:
-            assert len(output_frames) == 1  # Only main frame
+        assert "deduped" not in output_frames
+        assert len(output_frames) == 1  # Only main frame
         
         # Verify only one frame was saved (duplicate should not be saved)
         saved_files = os.listdir(temp_workdir)
@@ -219,6 +215,7 @@ class TestSmokeSimple:
 
     def test_different_frame_processing(self, temp_workdir, stub_hf_model):
         """Test processing of different frames (should be saved)."""
+        import torch
         config_data = {
             'hash_threshold': 5,
             'motion_threshold': 1200,
@@ -243,14 +240,14 @@ class TestSmokeSimple:
         frame1 = Frame(image1, {"meta": {"id": 1}}, 'BGR')
         frame2 = Frame(image2, {"meta": {"id": 2}}, 'BGR')
         
-        # 1. Process first frame (stub returns torch.zeros)
+        # 1. Process first frame (stub returns torch.ones)
         frames1 = {"main": frame1}
         filter_instance.process(frames1)
                 
         # 2. MANUALLY ALTER THE STUB FOR THE SECOND FRAME
-        # Change the mock features from zeros to ones. 
-        # This guarantees cosine similarity math will register them as different.
-        stub_hf_model.last_hidden_state = torch.ones(1, 1, 128)
+        # Inverting the features ensures cosine similarity will register as -1.0,
+        # which safely guarantees it falls below the 0.9 threshold.
+        stub_hf_model.last_hidden_state = torch.ones(1, 1, 128) * -1
         
         # Process different frame
         frames2 = {"main": frame2}
@@ -267,7 +264,54 @@ class TestSmokeSimple:
         
         assert filter_instance.processed_frame_count == 2
         assert filter_instance.frame_count == 3
+
+    def test_model_duplicate_frame_processing(self, temp_workdir, stub_hf_model):
+        """Test that model-based deduplication correctly skips a frame with high similarity."""
+        import torch
+        config_data = {
+            'hash_threshold': 5,
+            'motion_threshold': 1200,
+            'min_time_between_frames': 0.0,
+            'ssim_threshold': 0.90,
+            'output_folder': temp_workdir,
+            'debug': True,
+            'forward_deduped_frames': True,
+            'forward_upstream_data': True, 
+            'use_model_dedup': True,
+            'model_hf_id': 'facebook/dinov2-small', 
+            'model_dedup_threshold': 0.9 
+        }
         
+        config = FilterFrameDedup.normalize_config(config_data)
+        filter_instance = FilterFrameDedup(config=config)
+        filter_instance.setup(config)
+        
+        image1 = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
+        image2 = np.random.randint(0, 256, (500, 500, 3), dtype=np.uint8)
+        
+        frame1 = Frame(image1, {"meta": {"id": 1}}, 'BGR')
+        frame2 = Frame(image2, {"meta": {"id": 2}}, 'BGR')
+        
+        # Explicitly ensure both frames return identical non-zero features (similarity 1.0)
+        stub_hf_model.last_hidden_state = torch.ones(1, 1, 128)
+        
+        # Process first frame
+        filter_instance.process({"main": frame1})
+        
+        # Process second frame (features are identical -> should be skipped)
+        output_frames = filter_instance.process({"main": frame2})
+        
+        # Verify duplicate path handling
+        assert "main" in output_frames
+        assert "deduped" not in output_frames
+        assert len(output_frames) == 1
+        
+        # Only the first frame should be saved
+        saved_files = os.listdir(temp_workdir)
+        assert len(saved_files) == 1
+        
+        assert filter_instance.processed_frame_count == 2
+        assert filter_instance.frame_count == 3
         
     def test_roi_processing(self, temp_workdir):
         """Test processing with ROI configuration."""
@@ -329,13 +373,10 @@ class TestSmokeSimple:
         frames2 = {"main": frame2}
         output_frames = filter_instance.process(frames2)
         
-        # Verify output
+        # Verify output explicitly ensures the deduped channel is absent
         assert "main" in output_frames
-        # Deduped channel is only present when frame is actually saved
-        if "deduped" in output_frames:
-            assert len(output_frames) == 2  # Main and deduped frames
-        else:
-            assert len(output_frames) == 1  # Only main frame
+        assert "deduped" not in output_frames
+        assert len(output_frames) == 1  # Only main frame
         
         # Verify only first frame was saved (second should be skipped due to time)
         saved_files = os.listdir(temp_workdir)
@@ -388,7 +429,7 @@ class TestSmokeSimple:
         frames = {"main": sample_frame}
         
         with patch('filter_frame_dedup.filter.logger') as mock_logger:
-            output_frames = filter_instance.process(frames)
+            filter_instance.process(frames)
             
             # Verify debug logging was called
             assert mock_logger.debug.called or mock_logger.info.called
