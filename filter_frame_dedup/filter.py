@@ -22,8 +22,13 @@ class FilterFrameDedupConfig(FilterConfig):
     debug:                              bool = False                        # Enable debug logging
     forward_deduped_frames:             bool = False                       # Forward deduplicated frames in a side channel
     forward_upstream_data:              bool = True                         # Forward data from upstream filters
-
-
+    
+    use_model_dedup:                    bool = False                       # Whether to use a model-based deduplication method
+    
+    # although cosine similarity ranges from -1 to 1, we only care about positive similarity for deduplication, so we set the threshold between 0 and 1
+    model_dedup_threshold:              float = 0.9                         # Threshold for model-based deduplication
+    model_hf_id:                        str = "facebook/dinov3-vits16-pretrain-lvd1689m"                         # Hugging Face model path for deduplication model
+    
 class FilterFrameDedup(Filter):
     """
     A filter that:
@@ -60,7 +65,9 @@ class FilterFrameDedup(Filter):
                 # Parse tuple string like "(100, 100, 200, 200)"
                 roi_str = config['roi'].strip('()')
                 config['roi'] = tuple(map(int, roi_str.split(', ')))
-
+            if 'model_dedup_threshold' in config and isinstance(config['model_dedup_threshold'], str):
+                config['model_dedup_threshold'] = float(config['model_dedup_threshold'])
+           
         # Convert to FilterFrameDedupConfig
         config = FilterFrameDedupConfig(**config)
         
@@ -92,6 +99,12 @@ class FilterFrameDedup(Filter):
         elif not isinstance(config.save_images, bool):
             raise ValueError(f"Invalid save_images mode: {config.save_images}. It should be True or False.")
 
+        # Validate use_model_dedup mode
+        if isinstance(config.use_model_dedup, str):   
+            config.use_model_dedup = config.use_model_dedup.lower() == 'true'
+        elif not isinstance(config.use_model_dedup, bool):
+            raise ValueError(f"Invalid use_model_dedup mode: {config.use_model_dedup}. It should be True or False.")
+
         # Validate thresholds
         if config.hash_threshold < 0:
             raise ValueError("Hash threshold must be non-negative")
@@ -101,7 +114,9 @@ class FilterFrameDedup(Filter):
             raise ValueError("Minimum time between frames must be non-negative")
         if not 0 <= config.ssim_threshold <= 1:
             raise ValueError("SSIM threshold must be between 0 and 1")
-
+        if not 0 <= config.model_dedup_threshold <= 1:
+            raise ValueError("Model deduplication threshold must be between 0 and 1")
+        
         # Validate ROI if provided
         if config.roi is not None:
             if len(config.roi) != 4:
@@ -122,15 +137,24 @@ class FilterFrameDedup(Filter):
         # Initialize processors
         self.hash_processor = HashFrameProcessor(config)
         self.ssim_processor = SSIMProcessor(config)
-        
         # Initialize counters
         self.processed_frame_count = 0
         self.frame_count = 1
         
-        # Create output folder if it doesn't exist and save_images is enabled
         if config.save_images and not os.path.exists(config.output_folder):
             os.makedirs(config.output_folder)
             
+        if self.config.use_model_dedup:
+            logger.info("Model-based deduplication is enabled. Initializing ModelProcessor...")
+            from filter_frame_dedup.model_processor import ModelProcessor
+            
+            try:
+                self.model_processor = ModelProcessor(config)
+            except Exception as e:
+                logger.error(f"Failed to initialize ModelProcessor: {e}")
+                raise    
+        else:
+            logger.info("Model-based deduplication is disabled. Skipping ModelProcessor initialization.")   
         logger.info(f"FilterFrameDedup setup completed. Config: {config.__dict__}")
 
     def process(self, frames: dict[str, Frame]) -> dict[str, Frame]:
@@ -185,58 +209,66 @@ class FilterFrameDedup(Filter):
             # Then check if frame should be saved based on SSIM
             if self.ssim_processor.should_save_frame(processed_image):
                 frame_path = None
-                
-                # Save frame to disk only if save_images is enabled
-                if self.config.save_images:
-                    frame_path = os.path.join(self.config.output_folder, f"frame_{self.frame_count:06d}.jpg")
-                    lock_path = frame_path + '.lock'
+                if self.config.debug:
+                    logger.info("Frame passed SSIM check")
+                if not self.config.use_model_dedup or self.model_processor.frame_is_unique(main_frame.rw_rgb.image.copy()):
 
-                    try:
-                        # Create lock file
-                        with open(lock_path, 'x') as _:
-                            # Write the processed image
-                            cv2.imwrite(frame_path, processed_image)
-                            # time.sleep(30) # for testing
-                    finally:
-                        # Always remove the lock file, even if writing fails
+                    # Save frame to disk only if save_images is enabled
+                    if self.config.use_model_dedup and self.config.debug:
+                            logger.info("Frame passed model deduplication check")
+                        
+                    if self.config.save_images:
+                        frame_path = os.path.join(self.config.output_folder, f"frame_{self.frame_count:06d}.jpg")
+                        lock_path = frame_path + '.lock'
+
                         try:
-                            os.remove(lock_path)
-                        except:
-                            pass
+                            # Create lock file
+                            with open(lock_path, 'x') as _:
+                                # Write the processed image
+                                cv2.imwrite(frame_path, processed_image)
+                                # time.sleep(30) # for testing
+                        finally:
+                            # Always remove the lock file, even if writing fails
+                            try:
+                                os.remove(lock_path)
+                            except:
+                                pass
+                        
+                        if self.config.debug:
+                            logger.info(f"Saved frame to {frame_path}")
+                    else:
+                        if self.config.debug:
+                            logger.info("Frame passed deduplication criteria but not saved (save_images=False)")
                     
-                    if self.config.debug:
-                        logger.info(f"Saved frame to {frame_path}")
+                    # Update the last saved time only when frame is actually saved
+                    self.hash_processor.update_last_saved_time()
+                    
+                    # Forward deduplicated frame in side channel if enabled
+                    if self.config.forward_deduped_frames:
+                        # Create a frame with the actual deduplicated image (the one that was saved)
+                        # This creates an asynchronous channel that only contains frames that passed deduplication
+                        deduped_frame = Frame(
+                            image=processed_image,  # Use the processed image that was saved
+                            data=main_frame.data.copy() if main_frame.data else {},
+                            format='BGR'
+                        )
+                        # Add metadata about the deduplication
+                        if deduped_frame.data is None:
+                            deduped_frame.data = {}
+                        deduped_frame.data['deduped'] = True
+                        deduped_frame.data['frame_number'] = self.frame_count - 1
+                        if frame_path:
+                            deduped_frame.data['saved_path'] = frame_path
+                        else:
+                            deduped_frame.data['saved_path'] = None
+                        deduped_frame.data['original_frame_id'] = main_frame.data.get('meta', {}).get('id') if main_frame.data else None                        
+                        output_frames['deduped'] = deduped_frame
+                        
+                        if self.config.debug:
+                            logger.info("Forwarded deduplicated frame in side channel")
                 else:
                     if self.config.debug:
-                        logger.info("Frame passed deduplication criteria but not saved (save_images=False)")
-                
-                # Update the last saved time only when frame is actually saved
-                self.hash_processor.update_last_saved_time()
-                
-                # Forward deduplicated frame in side channel if enabled
-                if self.config.forward_deduped_frames:
-                    # Create a frame with the actual deduplicated image (the one that was saved)
-                    # This creates an asynchronous channel that only contains frames that passed deduplication
-                    deduped_frame = Frame(
-                        image=processed_image,  # Use the processed image that was saved
-                        data=main_frame.data.copy() if main_frame.data else {},
-                        format='BGR'
-                    )
-                    # Add metadata about the deduplication
-                    if deduped_frame.data is None:
-                        deduped_frame.data = {}
-                    deduped_frame.data['deduped'] = True
-                    deduped_frame.data['frame_number'] = self.frame_count - 1
-                    if frame_path:
-                        deduped_frame.data['saved_path'] = frame_path
-                    else:
-                        deduped_frame.data['saved_path'] = None
-                    deduped_frame.data['original_frame_id'] = getattr(main_frame.data, 'id', None) if main_frame.data else None
-                    
-                    output_frames['deduped'] = deduped_frame
-                    
-                    if self.config.debug:
-                        logger.info("Forwarded deduplicated frame in side channel")
+                        logger.info("Skipping frame due to high cosine similarity to last saved frame")
             else:
                 if self.config.debug:
                     logger.info("Skipping frame due to high SSIM score")

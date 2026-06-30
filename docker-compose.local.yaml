@@ -4,7 +4,7 @@ services:
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-}
       FILTER_ID: VideoIn
-      FILTER_SOURCES: file:///video.mp4!sync!loop
+      FILTER_SOURCES: file:///video.mp4!sync
       FILTER_OUTPUTS: tcp://*
     volumes:
       - ./data/sample-video.mp4:/video.mp4:ro
@@ -12,16 +12,24 @@ services:
   frame_dedup_filter:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     image: filter-frame-dedup:local
     pull_policy: never
     environment:
-      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       FILTER_ID: FrameDedupFilter
       FILTER_SOURCES: tcp://video_in
       FILTER_OUTPUTS: tcp://*
-      FILTER_OUTPUT_FOLDER: ./output
-
+      FILTER_OUTPUT_FOLDER: /output
+      FILTER_SAVE_IMAGES: "true"
+      FILTER_MIN_TIME_BETWEEN_FRAMES: 0.0
+      FILTER_USE_MODEL_DEDUP: "true"
+      FILTER_MODEL_DEDUP_THRESHOLD: 0.92
+      FILTER_MODEL_HF_ID: "facebook/dinov3-vits16-pretrain-lvd1689m"
+      HF_TOKEN: ${HF_TOKEN}
+      HF_HUB_OFFLINE: 0
+    volumes:
+      - ./output:/output
   webvis:
     image: containers.openfilter.io/plainsightai/openfilter-webvis:v0.1.10
     environment:

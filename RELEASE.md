@@ -1,4 +1,10 @@
-# v1.1.4
+# v1.1.5
+
+
+## v1.1.5 - 2026-06-23
+
+### Changed
+- Add option for users to use HF model to deduplicate frames. 
 
 ## v1.1.4 - 2026-04-23
 

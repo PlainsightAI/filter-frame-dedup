@@ -37,6 +37,17 @@ dev = [
   "wheel==0.44.0",
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
+
+  # duplicate here to ensure tests are passing
+  "filter-frame-dedup[model]"
+] 
+
+model = [
+  "torch>=2.0.0",
+  "transformers>=4.56.0",
+  "torchvision", 
+  "safetensors>=0.3",
+  "huggingface-hub>=0.14",
 ]
 
 [[tool.uv.index]]
