@@ -34,7 +34,7 @@ dev = [
   "build>=1.2.2",
   "setuptools==72.2.0",
   "twine>=6.1.0,<7",
-  "wheel==0.44.0",
+  "wheel==0.46.2",
   "pytest==8.3.4",
   "pytest-cov==6.0.0",
 
