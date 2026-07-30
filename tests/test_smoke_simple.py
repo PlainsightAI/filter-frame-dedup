@@ -10,6 +10,7 @@ import numpy as np
 import tempfile
 import os
 from types import SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from openfilter.filter_runtime.filter import Frame
 from filter_frame_dedup.filter import FilterFrameDedup, FilterFrameDedupConfig
