@@ -5,6 +5,9 @@
 
 ### Changed
 - Added handling of different model types (e.g. resnet)
+- Added simple motion gate processor (frame differencing)
+- Added patchify mode for SSIM and motion gate. 
+- Alow user to configure processors used and the order
 
 ## v1.1.5 - 2026-06-23
 

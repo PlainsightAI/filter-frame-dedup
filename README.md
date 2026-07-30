@@ -54,6 +54,9 @@ docker-compose up
 | `DEBUG` | `false` | Enable debug logging |
 | `FORWARD_DEDUPED_FRAMES` | `false` | Forward deduplicated frames in side channel |
 | `FORWARD_UPSTREAM_DATA` | `true` | Forward data from upstream filters |
+| `ACTIVE_PROCESSORS` | `["motion_gate", "hash_dedup", "ssim_dedup"]` | List of processor names determining pipeline filters and execution order |
+| `MOTION_GATE_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based motion gating (values $> 1$ weight small objects higher) |
+| `SSIM_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based SSIM comparisons (values $> 1$ weight small objects higher) |
 
 ### Configuration Examples
 
@@ -254,16 +257,14 @@ The filter supports a special **side channel** called `deduped` that contains on
 
 ## How It Works
 
-The filter uses a multi-stage approach:
+The filter executes a completely customizable, sequential processing pipeline configured via `active_processors`:
 
-1. **Hash Analysis**: Computes perceptual, average, and difference hashes
-2. **Motion Detection**: Analyzes pixel-level differences between frames
-3. **SSIM Comparison**: Uses Structural Similarity Index for detailed comparison
-4. **Frame Selection**: Saves frames that meet all criteria:
-   - Hash differences exceed threshold OR motion is detected
-   - SSIM score is below threshold
-   - Minimum time has elapsed since last save
-5. **Side Channel Output**: If enabled, forwards saved frames to `deduped` channel
+1. **Pipeline Execution**: Steps are processed in the exact sequential order requested in `active_processors`.
+2. **Motion Gatekeeper**: Optionally evaluates pixel-level delta changes between frames. Supports $L \times L$ grid-based patchified gating (`motion_gate_patch_grid_size > 1`) to weight local motion of small objects higher.
+3. **Hash Analysis**: Computes perceptual, average, and difference hashes.
+4. **SSIM Comparison**: Uses Structural Similarity Index (SSIM) for detailed structural changes. Supports $L \times L$ grid-based patchified SSIM (`ssim_patch_grid_size > 1`) to detect structural changes of small local objects.
+5. **Frame Selection**: Saves frames that successfully pass all active filtering criteria and where the minimum time threshold has elapsed.
+6. **Side Channel Output**: If enabled, forwards saved frames to the `deduped` channel.
 
 ## Output
 

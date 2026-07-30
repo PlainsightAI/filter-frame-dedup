@@ -144,21 +144,18 @@ class HashFrameProcessor:
             print(f"Time elapsed since last save: {time_elapsed:.2f}s")
             print(f"Should process: {(hash_changed or motion_detected) and (time_elapsed >= self.config.min_time_between_frames)}")
 
-        # Update previous values
-        self.prev_phash = phash
-        self.prev_ahash = ahash
-        self.prev_dhash = dhash
-        self.prev_frame = image
-
         # For the first frame (when last_saved_time is 0), always process if there are changes
         if self.last_saved_time == 0:
             return hash_changed or motion_detected
 
         return (hash_changed or motion_detected) and (time_elapsed >= self.config.min_time_between_frames)
 
-    def update_last_saved_time(self):
+    def update_reference_frame(self, image: np.ndarray):
         """
-        Update the last saved time when a frame is actually saved.
-        This should be called by the filter after successfully saving a frame.
+        Update the reference frame, hashes, and last saved time to the newly saved/key frame.
         """
+        self.prev_phash = self.compute_phash(image)
+        self.prev_ahash = self.compute_ahash(image)
+        self.prev_dhash = self.compute_dhash(image)
+        self.prev_frame = image
         self.last_saved_time = time.time() 
