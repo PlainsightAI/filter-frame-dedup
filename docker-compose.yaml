@@ -9,7 +9,7 @@ services:
     volumes:
       - ./data/sample-video.mp4:/video.mp4
   frame_dedup_filter:
-    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.5
+    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.1.6
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       FILTER_ID: FrameDedupFilter
