@@ -1,5 +1,10 @@
-# v1.1.5
+# v1.1.6
 
+
+## v1.1.6 - 2026-07-30
+
+### Changed
+- Added handling of different model types (e.g. resnet)
 
 ## v1.1.5 - 2026-06-23
 
