@@ -32,7 +32,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "build>=1.2.2",
-  "setuptools==78.1.1",
+  "setuptools==83.0.0",
   "twine>=6.1.0,<7",
   "wheel==0.46.2",
   "pytest==9.0.3",
