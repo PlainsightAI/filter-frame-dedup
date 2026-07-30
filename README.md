@@ -8,7 +8,7 @@ FrameSelect is a sophisticated OpenFilter component that intelligently reduces r
 
 ## Features
 
-- **Multi-Method Detection**: Uses perceptual hashing (pHash, aHash, dHash), motion analysis, and SSIM comparison
+- **Multi-Method Detection**: Uses perceptual hashing (pHash, aHash, dHash), motion analysis, SSIM comparison, and Model Feature deduplication based on cosine similarity (for ViT backbones, prioritizes averaged feature tokens)
 - **Intelligent Filtering**: Configurable thresholds for fine-tuning sensitivity
 - **Side Channel Support**: Forward deduplicated frames in separate channels (accessible via `localhost:8000/deduped`)
 - **Upstream Data Forwarding**: Preserve metadata from upstream filters
