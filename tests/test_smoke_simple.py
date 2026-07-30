@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 import tempfile
 import os
+from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 from openfilter.filter_runtime.filter import Frame
 from filter_frame_dedup.filter import FilterFrameDedup, FilterFrameDedupConfig
@@ -55,6 +56,26 @@ class TestSmokeSimple:
             mock_model.return_value = mock_model_instance
             
             yield mock_outputs  # Allows tests to modify the fake features if needed
+
+    @pytest.fixture
+    def controllable_hf_model(self):
+        """Patch HF model/processor and allow tests to inject arbitrary model outputs."""
+        import torch
+
+        state = {"outputs": None}
+
+        with patch('filter_frame_dedup.model_processor.AutoModel.from_pretrained') as mock_model, \
+            patch('filter_frame_dedup.model_processor.AutoImageProcessor.from_pretrained') as mock_processor:
+
+            mock_processor_instance = MagicMock()
+            mock_processor_instance.return_value = {"pixel_values": torch.zeros(1, 3, 224, 224)}
+            mock_processor.return_value = mock_processor_instance
+
+            mock_model_instance = MagicMock()
+            mock_model_instance.side_effect = lambda **kwargs: state["outputs"]
+            mock_model.return_value = mock_model_instance
+
+            yield state
             
     def test_filter_initialization(self, temp_workdir):
         """Test that the filter can be initialized with valid config."""
@@ -312,6 +333,132 @@ class TestSmokeSimple:
         
         assert filter_instance.processed_frame_count == 2
         assert filter_instance.frame_count == 3
+
+    def test_model_feature_extraction_pooler_output(self, controllable_hf_model):
+        """Ensure pooled embeddings are used directly when present."""
+        import torch
+        from filter_frame_dedup.model_processor import ModelProcessor
+
+        config = SimpleNamespace(
+            use_model_dedup=True,
+            model_dedup_threshold=0.9,
+            roi=None,
+            model_hf_id='dummy/model'
+        )
+        processor = ModelProcessor(config)
+
+        controllable_hf_model["outputs"] = SimpleNamespace(
+            pooler_output=torch.tensor([[1.0, 2.0, 3.0]]),
+            last_hidden_state=torch.tensor([[[100.0, 100.0, 100.0]]])
+        )
+
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        feats = processor._extract_image_feats(image)
+
+        assert feats.shape == (3,)
+        assert np.allclose(feats, np.array([1.0, 2.0, 3.0]))
+
+    def test_model_feature_extraction_last_hidden_state_tokens(self, controllable_hf_model):
+        """Ensure token outputs [B,S,D] are mean-pooled across S."""
+        import torch
+        from filter_frame_dedup.model_processor import ModelProcessor
+
+        config = SimpleNamespace(
+            use_model_dedup=True,
+            model_dedup_threshold=0.9,
+            roi=None,
+            model_hf_id='dummy/model'
+        )
+        processor = ModelProcessor(config)
+
+        controllable_hf_model["outputs"] = SimpleNamespace(
+            last_hidden_state=torch.tensor([[
+                [1.0, 3.0],
+                [3.0, 5.0],
+                [5.0, 7.0],
+            ]])
+        )
+
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        feats = processor._extract_image_feats(image)
+
+        assert feats.shape == (2,)
+        assert np.allclose(feats, np.array([3.0, 5.0]))
+
+    def test_model_feature_extraction_resnet_spatial_map(self, controllable_hf_model):
+        """Ensure CNN-like outputs [B,C,H,W] are global-average pooled over spatial dims."""
+        import torch
+        from filter_frame_dedup.model_processor import ModelProcessor
+
+        config = SimpleNamespace(
+            use_model_dedup=True,
+            model_dedup_threshold=0.9,
+            roi=None,
+            model_hf_id='dummy/model'
+        )
+        processor = ModelProcessor(config)
+
+        controllable_hf_model["outputs"] = SimpleNamespace(
+            last_hidden_state=torch.tensor([[
+                [[1.0, 3.0], [5.0, 7.0]],
+                [[2.0, 4.0], [6.0, 8.0]],
+            ]])
+        )
+
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        feats = processor._extract_image_feats(image)
+
+        assert feats.shape == (2,)
+        assert np.allclose(feats, np.array([4.0, 5.0]))
+
+    def test_model_feature_extraction_hidden_states_uses_last(self, controllable_hf_model):
+        """Ensure hidden_states fallback uses the last layer."""
+        import torch
+        from filter_frame_dedup.model_processor import ModelProcessor
+
+        config = SimpleNamespace(
+            use_model_dedup=True,
+            model_dedup_threshold=0.9,
+            roi=None,
+            model_hf_id='dummy/model'
+        )
+        processor = ModelProcessor(config)
+
+        hs_first = torch.tensor([[[1.0, 1.0], [1.0, 1.0]]])
+        hs_last = torch.tensor([[[2.0, 4.0], [6.0, 8.0]]])
+        controllable_hf_model["outputs"] = SimpleNamespace(
+            hidden_states=(hs_first, hs_last)
+        )
+
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        feats = processor._extract_image_feats(image)
+
+        # mean over token dimension from hs_last
+        assert feats.shape == (2,)
+        assert np.allclose(feats, np.array([4.0, 6.0]))
+
+    def test_model_feature_extraction_tuple_output_fallback(self, controllable_hf_model):
+        """Ensure tuple/list style model outputs are supported as a final fallback."""
+        import torch
+        from filter_frame_dedup.model_processor import ModelProcessor
+
+        config = SimpleNamespace(
+            use_model_dedup=True,
+            model_dedup_threshold=0.9,
+            roi=None,
+            model_hf_id='dummy/model'
+        )
+        processor = ModelProcessor(config)
+
+        controllable_hf_model["outputs"] = (
+            torch.tensor([[[2.0, 6.0], [4.0, 10.0]]]),
+        )
+
+        image = np.zeros((64, 64, 3), dtype=np.uint8)
+        feats = processor._extract_image_feats(image)
+
+        assert feats.shape == (2,)
+        assert np.allclose(feats, np.array([3.0, 8.0]))
         
     def test_roi_processing(self, temp_workdir):
         """Test processing with ROI configuration."""
