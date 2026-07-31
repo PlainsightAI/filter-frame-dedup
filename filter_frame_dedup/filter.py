@@ -181,6 +181,12 @@ class FilterFrameDedup(Filter):
             if p not in valid_processor_names:
                 raise ValueError(f"Invalid processor name in active_processors: '{p}'. Must be one of {sorted(list(valid_processor_names))}")
 
+        # active_processors is authoritative: keep the legacy use_* flags in sync with it
+        # so each processor's own guard (e.g. ModelProcessor.__init__, which raises when
+        # use_model_dedup is False) agrees with the pipeline that was actually requested.
+        config.use_hash_dedup = any(p in ("hash_dedup", "hash_processor") for p in config.active_processors)
+        config.use_model_dedup = any(p in ("model_dedup", "model_processor") for p in config.active_processors)
+
         return config
 
     def setup(self, config: FilterFrameDedupConfig):
