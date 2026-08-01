@@ -148,10 +148,12 @@ class FilterFrameDedup(Filter):
             raise ValueError("SSIM threshold must be between 0 and 1")
         if not 0 <= config.model_dedup_threshold <= 1:
             raise ValueError("Model deduplication threshold must be between 0 and 1")
-        if config.motion_gate_pixel_delta_threshold < 0:
-            raise ValueError("Motion gate pixel delta threshold must be non-negative")
-        if config.motion_gate_eval_width <= 0:
-            raise ValueError("Motion gate evaluation width must be positive")
+        # Delta is a mean absolute grayscale difference (0..255); a threshold above 255
+        # can never be reached and would silently reject every frame, disabling dedup.
+        if not 0 <= config.motion_gate_pixel_delta_threshold <= 255:
+            raise ValueError("Motion gate pixel delta threshold must be between 0 and 255")
+        if config.motion_gate_eval_width < 1:
+            raise ValueError("Motion gate evaluation width must be at least 1")
         if config.motion_gate_patch_grid_size <= 0:
             raise ValueError("Motion gate patch grid size must be positive")
         if config.ssim_patch_grid_size <= 0:

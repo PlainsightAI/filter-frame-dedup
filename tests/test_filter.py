@@ -513,5 +513,65 @@ class TestFilterFrameDedup(unittest.TestCase):
                 f = FilterFrameDedup(config_dict)
                 f.config = f.normalize_config(f.config)
 
+    def test_motion_gate_pixel_delta_threshold_upper_bound(self):
+        # A threshold above the 0..255 mean-delta range would reject every frame
+        # forever, silently disabling dedup; it must be rejected at config time.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'motion_gate_pixel_delta_threshold': 300,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        with self.assertRaises(ValueError):
+            f = FilterFrameDedup(config_dict)
+            f.config = f.normalize_config(f.config)
+
+    def test_motion_gate_tiny_frame_resize_no_crash(self):
+        # A wide, 1px-tall frame rounds the resized height to 0 without clamping,
+        # which makes cv2.resize raise. It must be handled gracefully.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        frame = np.zeros((1, 1920, 3), dtype=np.uint8)  # h=1, w=1920, eval_width=480 -> h*scale rounds to 0
+        # Neither the check nor the reference update should raise
+        self.assertTrue(f.motion_gatekeeper.should_process_frame(frame))
+        f.motion_gatekeeper.update_reference_frame(frame)
+
+    def test_ssim_uncomputable_patch_keeps_frame(self):
+        # When patches are too small to compute SSIM, the comparison is uncomputable
+        # and a dedup filter must fail open (KEEP the frame), not treat it as duplicate.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["ssim_dedup"],
+                'ssim_patch_grid_size': 4,   # 8x8 image -> 2x2 patches -> SSIM uncomputable
+                'ssim_threshold': 0.90,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        frame1 = np.zeros((8, 8, 3), dtype=np.uint8)
+        frame2 = np.zeros((8, 8, 3), dtype=np.uint8)  # identical, but patches are uncomputable
+        f.ssim_processor.should_save_frame(frame1)
+        f.ssim_processor.update_reference_frame(frame1)
+        # Even for identical frames, an uncomputable patch comparison keeps the frame
+        self.assertTrue(f.ssim_processor.should_save_frame(frame2))
+
 if __name__ == "__main__":
     unittest.main()

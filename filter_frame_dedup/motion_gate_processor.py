@@ -25,7 +25,10 @@ class FastMotionGatekeeper:
         # Downsample slightly to eval_width for ultra-fast CPU evaluation (preserves big motion)
         h, w = frame.shape[:2]
         scale = self.eval_width / float(w)
-        small_frame = cv2.resize(frame, (self.eval_width, int(h * scale)), interpolation=cv2.INTER_NEAREST)
+        # Clamp target height to >=1 so extreme aspect ratios (e.g. line-scan frames,
+        # or eval_width=1) don't round to 0 and make cv2.resize raise.
+        target_h = max(1, int(h * scale))
+        small_frame = cv2.resize(frame, (self.eval_width, target_h), interpolation=cv2.INTER_NEAREST)
         return cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
 
     def should_process_frame(self, frame: np.ndarray) -> bool:

@@ -73,9 +73,11 @@ class SSIMProcessor:
                     if min_dim >= 3:
                         score, _ = ssim(gray1_patch, gray2_patch, full=True, win_size=win_size)
                     else:
-                        # Fallback for extremely small patches where SSIM cannot be computed
-                        score = 1.0
-                        
+                        # Fallback for extremely small patches where SSIM cannot be computed.
+                        # An uncomputable comparison must KEEP the frame (fail-open for a dedup
+                        # filter), so force the keep path with a "definitely different" score.
+                        score = 0.0
+
                     # If ANY patch passes (SSIM is <= ssim_threshold), the entire frame passes
                     if score <= self.config.ssim_threshold:
                         return True
