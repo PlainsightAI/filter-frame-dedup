@@ -7,7 +7,7 @@ services:
       FILTER_SOURCES: file:///video.mp4!sync
       FILTER_OUTPUTS: tcp://*
     volumes:
-      - ${VIDEO_INPUT:-./data/car.mp4}:/video.mp4:ro
+      - ${VIDEO_INPUT:-./data/sample-video.mp4}:/video.mp4:ro
 
   frame_dedup_filter:
     build:
@@ -16,7 +16,8 @@ services:
     image: filter-frame-dedup:local
     pull_policy: never
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
       FILTER_ID: FrameDedupFilter
@@ -25,17 +26,17 @@ services:
       FILTER_OUTPUT_FOLDER: /output
       FILTER_SAVE_IMAGES: true
       FILTER_MIN_TIME_BETWEEN_FRAMES: ${FILTER_MIN_TIME_BETWEEN_FRAMES:-0.0}
-      FILTER_USE_HASH_DEDUP: ${FILTER_USE_HASH_DEDUP:-"false"}
+      FILTER_USE_HASH_DEDUP: ${FILTER_USE_HASH_DEDUP:-false}
       FILTER_MOTION_GATE_PATCH_GRID_SIZE: ${FILTER_MOTION_GATE_PATCH_GRID_SIZE:-8}
       FILTER_SSIM_PATCH_GRID_SIZE: ${FILTER_SSIM_PATCH_GRID_SIZE:-8}
       FILTER_SSIM_THRESHOLD: ${FILTER_SSIM_THRESHOLD:-0.7}
-      FILTER_USE_MODEL_DEDUP: ${FILTER_USE_MODEL_DEDUP:-"false"}
+      FILTER_USE_MODEL_DEDUP: ${FILTER_USE_MODEL_DEDUP:-false}
       FILTER_MODEL_DEDUP_THRESHOLD: ${FILTER_MODEL_DEDUP_THRESHOLD:-0.98}
-      FILTER_MODEL_HF_ID: ${FILTER_MODEL_HF_ID:-"microsoft/resnet-18"}
+      FILTER_MODEL_HF_ID: ${FILTER_MODEL_HF_ID:-microsoft/resnet-18}
       HF_TOKEN: ${HF_TOKEN}
       HF_HUB_OFFLINE: 0
     volumes:
-      - ${FILTER_OUTPUT_FOLDER:-./output/no_model_car}:/output
+      - ${HOST_OUTPUT:-./output}:/output
   webvis:
     image: containers.openfilter.io/plainsightai/openfilter-webvis:v0.1.10
     environment:

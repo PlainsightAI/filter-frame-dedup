@@ -46,6 +46,7 @@ docker-compose up
 | `VIDEO_INPUT` | `../data/sample-video.mp4` | Input video file path |
 | `OUTPUT_FOLDER` | `./output` | Directory to save deduplicated frames |
 | `SAVE_IMAGES` | `true` | Whether to save images to disk |
+| `USE_HASH_DEDUP` | `true` | Whether to use the hash-based deduplication processor (legacy flag; ignored when `ACTIVE_PROCESSORS` is set) |
 | `HASH_THRESHOLD` | `5` | Minimum hash difference to consider unique |
 | `MOTION_THRESHOLD` | `1200` | Minimum motion intensity threshold |
 | `MIN_TIME_BETWEEN_FRAMES` | `1.0` | Minimum time between saved frames (seconds) |
@@ -55,6 +56,8 @@ docker-compose up
 | `FORWARD_DEDUPED_FRAMES` | `false` | Forward deduplicated frames in side channel |
 | `FORWARD_UPSTREAM_DATA` | `true` | Forward data from upstream filters |
 | `ACTIVE_PROCESSORS` | `["motion_gate", "hash_dedup", "ssim_dedup"]` | List of processor names determining pipeline filters and execution order |
+| `MOTION_GATE_PIXEL_DELTA_THRESHOLD` | `1.5` | Mean per-pixel absolute delta above which the motion gate lets a frame pass |
+| `MOTION_GATE_EVAL_WIDTH` | `480` | Width (px) the motion gate downsamples frames to before computing the delta |
 | `MOTION_GATE_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based motion gating (values $> 1$ weight small objects higher) |
 | `SSIM_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based SSIM comparisons (values $> 1$ weight small objects higher) |
 

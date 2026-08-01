@@ -123,22 +123,25 @@ class ModelProcessor:
         """
         Determines if the given image is unique based on the model features and the configured threshold.
 
+        This is a pure check: it does NOT mutate the reference frame. Call
+        update_reference_frame(image) only after the frame is accepted by every
+        pipeline step.
+
         Args:
             image: The input image to be evaluated.
         Returns:
             bool: True if the image is unique, False otherwise.
         """
-   
-        
         cur_feats = self._extract_image_feats(image)
-        
+
         if self.last_key_frame_features is None:
-            self.last_key_frame_features = cur_feats
             return True
-        
+
         similarity_last_key_frame = self._compute_cosine_similarity(cur_feats, self.last_key_frame_features)
-        if similarity_last_key_frame < self.model_dedup_threshold:
-            self.last_key_frame_features = cur_feats
-            return True
-        else:
-            return False
+        return similarity_last_key_frame < self.model_dedup_threshold
+
+    def update_reference_frame(self, image: np.ndarray):
+        """
+        Update the reference frame features to the newly saved/key frame.
+        """
+        self.last_key_frame_features = self._extract_image_feats(image)

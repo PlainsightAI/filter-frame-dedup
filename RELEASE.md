@@ -1,5 +1,21 @@
-# v1.1.6
+# v1.2.0
 
+
+## v1.2.0 - 2026-07-31
+
+### Added
+- Configurable `active_processors`: name the processors and their execution order; also accepts the env-var string form (e.g. `'["motion_gate", "hash_dedup"]'`).
+- ROI-aware motion gate: `FastMotionGatekeeper` now applies the same ROI crop as the other processors before computing the pixel delta.
+
+### Changed
+- Motion gating and patchify mode (SSIM + motion gate) are now first-class, reorderable pipeline steps.
+- Reference-frame updates are strictly deferred: each processor's check is pure and its reference is updated only after a frame is accepted by every step.
+- Legacy fallback (when `active_processors` is unset) preserves v1.1.6 behavior and no longer injects `motion_gate`; the motion gate stays opt-in via explicit `active_processors`.
+- Renamed the internal `saved_frame_count` counter to `unique_frame_count` and clarified the shutdown log ("Total unique frames").
+
+### Fixed
+- Model-dedup no longer mutates its reference frame inside the uniqueness check; `frame_is_unique` is a pure check and `update_reference_frame` is wired into the pipeline.
+- An empty `active_processors` (e.g. `[]` / `"[]"`) now raises instead of silently building a pipeline that dedups nothing.
 
 ## v1.1.6 - 2026-07-30
 

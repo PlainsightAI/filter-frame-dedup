@@ -14,6 +14,9 @@ class TestFilterFrameDedup(unittest.TestCase):
         # Setting up test configuration for FilterFrameDedup and initializing it
         config = {
             'config': {
+                # motion_gate is opt-in; request it explicitly so tests that rely
+                # on self.filter.motion_gatekeeper keep the v1.1.6 default pipeline
+                'active_processors': ["motion_gate", "hash_dedup", "ssim_dedup"],
                 'hash_threshold': 5,
                 'motion_threshold': 1200,  # Match the default in filter
                 'min_time_between_frames': 0.1,  # Reduced from 1.0 to 0.1 for testing
@@ -282,8 +285,9 @@ class TestFilterFrameDedup(unittest.TestCase):
         saved_count = len(os.listdir('test_frames'))
         self.assertGreater(saved_count, 1)
 
-    def test_hash_processor_optional_and_motion_gate_pipeline(self):
-        # Create config with use_hash_dedup=False
+    def test_hash_processor_optional_legacy_fallback(self):
+        # Legacy fallback (no active_processors) with use_hash_dedup=False preserves
+        # v1.1.6 behavior: only ssim_dedup, no auto-injected motion_gate, no hash.
         from filter_frame_dedup.filter import FilterFrameDedupConfig, FilterFrameDedup
         config_dict = {
             'config': {
@@ -297,16 +301,18 @@ class TestFilterFrameDedup(unittest.TestCase):
         custom_filter = FilterFrameDedup(config_dict)
         custom_filter.config = custom_filter.normalize_config(custom_filter.config)
         custom_filter.setup(custom_filter.config)
-        
+
         # Verify hash processor is disabled/None
         self.assertIsNone(custom_filter.hash_processor)
-        
+        # motion_gate is opt-in and must NOT be auto-added by the legacy fallback
+        self.assertIsNone(custom_filter.motion_gatekeeper)
+
         # Verify pipeline structure
         pipeline_names = [step["name"] for step in custom_filter.pipeline]
-        self.assertIn("Motion Gatekeeper", pipeline_names)
+        self.assertNotIn("Motion Gatekeeper", pipeline_names)
         self.assertNotIn("Hash Processor", pipeline_names)
         self.assertIn("SSIM Processor", pipeline_names)
-        
+
         # Test processing frames
         frame1 = self.generate_mock_frame(1280, 720, (255, 0, 0))
         processed1 = custom_filter.process({'main': frame1})
@@ -325,6 +331,7 @@ class TestFilterFrameDedup(unittest.TestCase):
         # 1. With patch_grid_size = 1 (default): should return False (motion ignored)
         config_dict_non_patch = {
             'config': {
+                'active_processors': ["motion_gate"],
                 'motion_gate_patch_grid_size': 1,
                 'motion_gate_pixel_delta_threshold': 1.5,
                 'output_folder': 'test_frames',
@@ -336,11 +343,13 @@ class TestFilterFrameDedup(unittest.TestCase):
         filter_non_patch.setup(filter_non_patch.config)
 
         filter_non_patch.motion_gatekeeper.should_process_frame(frame1)
+        filter_non_patch.motion_gatekeeper.update_reference_frame(frame1)
         self.assertFalse(filter_non_patch.motion_gatekeeper.should_process_frame(frame2))
 
         # 2. With patch_grid_size = 4: should return True (motion caught)
         config_dict_patch = {
             'config': {
+                'active_processors': ["motion_gate"],
                 'motion_gate_patch_grid_size': 4,
                 'motion_gate_pixel_delta_threshold': 1.5,
                 'output_folder': 'test_frames',
@@ -352,6 +361,7 @@ class TestFilterFrameDedup(unittest.TestCase):
         filter_patch.setup(filter_patch.config)
 
         filter_patch.motion_gatekeeper.should_process_frame(frame1)
+        filter_patch.motion_gatekeeper.update_reference_frame(frame1)
         self.assertTrue(filter_patch.motion_gatekeeper.should_process_frame(frame2))
 
     def test_patchified_ssim(self):
@@ -428,6 +438,80 @@ class TestFilterFrameDedup(unittest.TestCase):
         self.filter.config.roi = (2000,2000,100)
         with self.assertRaises(ValueError):
             self.filter.hash_processor.extract_roi(frame)
+
+    def test_active_processors_env_string_form(self):
+        # active_processors can arrive as an env-var STRING (not a Python list)
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': '["motion_gate", "hash_dedup"]',
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        custom_filter = FilterFrameDedup(config_dict)
+        custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+        custom_filter.setup(custom_filter.config)
+
+        # The string is parsed into a real list, preserving order
+        self.assertEqual(custom_filter.config.active_processors, ["motion_gate", "hash_dedup"])
+        # Legacy flags are kept in sync with the resolved list
+        self.assertTrue(custom_filter.config.use_hash_dedup)
+        self.assertFalse(custom_filter.config.use_model_dedup)
+
+        pipeline_names = [step["name"] for step in custom_filter.pipeline]
+        self.assertEqual(pipeline_names, ["Motion Gatekeeper", "Hash Processor"])
+
+    def test_model_dedup_ordering_reference_not_mutated_on_rejection(self):
+        # When model_dedup runs BEFORE a later rejecting step, the model reference
+        # must only be updated after the frame is accepted by every step.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["model_dedup", "ssim_dedup"],
+                'roi': None,
+                'ssim_threshold': 0.90,
+                'output_folder': 'test_frames',
+                'save_images': False,
+                'forward_deduped_frames': False
+            }
+        }
+        # Patch ModelProcessor so no real HF model is loaded; the mock always
+        # reports the frame as unique so the later SSIM step is the rejecter.
+        with patch('filter_frame_dedup.model_processor.ModelProcessor') as MockMP:
+            mock_instance = MockMP.return_value
+            mock_instance.frame_is_unique.return_value = True
+
+            custom_filter = FilterFrameDedup(config_dict)
+            custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+            custom_filter.setup(custom_filter.config)
+
+            # model_dedup must be first in the pipeline, ssim second
+            pipeline_names = [step["name"] for step in custom_filter.pipeline]
+            self.assertEqual(pipeline_names, ["Model Processor", "SSIM Processor"])
+
+            frame1 = self.generate_mock_frame(1280, 720, (255, 0, 0))
+            frame2 = self.generate_mock_frame(1280, 720, (255, 0, 0))  # identical -> SSIM rejects
+
+            custom_filter.process({'main': frame1})  # accepted -> model reference updated once
+            custom_filter.process({'main': frame2})  # rejected by SSIM -> model reference NOT updated
+
+            self.assertEqual(mock_instance.update_reference_frame.call_count, 1)
+
+    def test_empty_active_processors_raises(self):
+        # An empty active_processors (list or env string "[]") must be rejected
+        from filter_frame_dedup.filter import FilterFrameDedup
+        for empty_value in ([], "[]"):
+            config_dict = {
+                'config': {
+                    'active_processors': empty_value,
+                    'output_folder': 'test_frames',
+                    'save_images': False
+                }
+            }
+            with self.assertRaises(ValueError):
+                f = FilterFrameDedup(config_dict)
+                f.config = f.normalize_config(f.config)
 
 if __name__ == "__main__":
     unittest.main()

@@ -165,21 +165,27 @@ class FilterFrameDedup(Filter):
             if w <= 0 or h <= 0:
                 raise ValueError("ROI width and height must be positive")
 
-        # Determine active processors based on legacy use_hash_dedup and use_model_dedup if active_processors is None
+        # Determine active processors from the legacy use_hash_dedup / use_model_dedup
+        # flags when active_processors is None. This preserves v1.1.6 behavior: the
+        # motion gate is NOT added here and stays opt-in via explicit active_processors.
         if config.active_processors is None:
-            processors = ["motion_gate"]
+            processors = []
             if config.use_hash_dedup:
                 processors.append("hash_dedup")
             processors.append("ssim_dedup")
             if config.use_model_dedup:
                 processors.append("model_dedup")
             config.active_processors = processors
-            
+
         # Validate active_processors contains only valid options
         valid_processor_names = {"motion_gate", "motion_gatekeeper", "hash_dedup", "hash_processor", "ssim_dedup", "ssim_processor", "model_dedup", "model_processor"}
         for p in config.active_processors:
             if p not in valid_processor_names:
                 raise ValueError(f"Invalid processor name in active_processors: '{p}'. Must be one of {sorted(list(valid_processor_names))}")
+
+        # An empty pipeline dedups nothing; reject it explicitly (e.g. [] or the env string "[]")
+        if len(config.active_processors) == 0:
+            raise ValueError("active_processors must contain at least one processor")
 
         # active_processors is authoritative: keep the legacy use_* flags in sync with it
         # so each processor's own guard (e.g. ModelProcessor.__init__, which raises when
@@ -205,7 +211,8 @@ class FilterFrameDedup(Filter):
             self.motion_gatekeeper = FastMotionGatekeeper(
                 pixel_delta_threshold=config.motion_gate_pixel_delta_threshold,
                 eval_width=config.motion_gate_eval_width,
-                patch_grid_size=config.motion_gate_patch_grid_size
+                patch_grid_size=config.motion_gate_patch_grid_size,
+                roi=config.roi
             )
         else:
             self.motion_gatekeeper = None
@@ -237,7 +244,7 @@ class FilterFrameDedup(Filter):
             
         # Initialize counters
         self.processed_frame_count = 0
-        self.saved_frame_count = 0
+        self.unique_frame_count = 0
         
         if config.save_images and not os.path.exists(config.output_folder):
             os.makedirs(config.output_folder)
@@ -270,7 +277,7 @@ class FilterFrameDedup(Filter):
                 self.pipeline.append({
                     "name": "Model Processor",
                     "check": self.model_processor.frame_is_unique,
-                    "update": None,
+                    "update": self.model_processor.update_reference_frame,
                     "image_type": "rgb"
                 })
                 
@@ -344,7 +351,7 @@ class FilterFrameDedup(Filter):
                     logger.info(f"Frame passed {step['name']} check")
 
         if is_unique:
-            self.saved_frame_count += 1
+            self.unique_frame_count += 1
             frame_path = None
             if self.config.save_images:
                 frame_path = os.path.join(self.config.output_folder, f"frame_{self.processed_frame_count:06d}.jpg")
@@ -411,7 +418,7 @@ class FilterFrameDedup(Filter):
         """
         logger.info("========= Shutting down FilterFrameDedup =========")
         logger.info(f"Total frames processed: {self.processed_frame_count}")
-        logger.info(f"Total frames saved: {self.saved_frame_count}")
+        logger.info(f"Total unique frames: {self.unique_frame_count}")
         logger.info("FilterFrameDedup shutdown complete.")
 
 

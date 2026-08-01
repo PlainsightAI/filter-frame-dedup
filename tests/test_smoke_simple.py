@@ -125,7 +125,7 @@ class TestSmokeSimple:
         assert filter_instance.hash_processor is not None
         assert filter_instance.ssim_processor is not None
         assert filter_instance.processed_frame_count == 0
-        assert filter_instance.saved_frame_count == 0
+        assert filter_instance.unique_frame_count == 0
         assert os.path.exists(temp_workdir)
         
         # Test shutdown
@@ -196,7 +196,7 @@ class TestSmokeSimple:
         saved_files = os.listdir(temp_workdir)
         assert len(saved_files) == 1
         assert filter_instance.processed_frame_count == 1
-        assert filter_instance.saved_frame_count == 1
+        assert filter_instance.unique_frame_count == 1
 
     def test_duplicate_frame_processing(self, sample_frame, temp_workdir):
         """Test processing of duplicate frames (should not be saved)."""
@@ -233,7 +233,7 @@ class TestSmokeSimple:
         
         # Verify counters
         assert filter_instance.processed_frame_count == 2
-        assert filter_instance.saved_frame_count == 1
+        assert filter_instance.unique_frame_count == 1
 
     def test_different_frame_processing(self, temp_workdir, stub_hf_model):
         """Test processing of different frames (should be saved)."""
@@ -285,7 +285,7 @@ class TestSmokeSimple:
         assert len(saved_files) == 2
         
         assert filter_instance.processed_frame_count == 2
-        assert filter_instance.saved_frame_count == 2
+        assert filter_instance.unique_frame_count == 2
 
     def test_model_duplicate_frame_processing(self, temp_workdir, stub_hf_model):
         """Test that model-based deduplication correctly skips a frame with high similarity."""
@@ -333,7 +333,7 @@ class TestSmokeSimple:
         assert len(saved_files) == 1
         
         assert filter_instance.processed_frame_count == 2
-        assert filter_instance.saved_frame_count == 1
+        assert filter_instance.unique_frame_count == 1
 
     def test_model_feature_extraction_pooler_output(self, controllable_hf_model):
         """Ensure pooled embeddings are used directly when present."""

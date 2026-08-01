@@ -25,9 +25,11 @@ def test_motion_only_leaves_both_flags_false():
 
 
 def test_default_pipeline_still_builds_when_active_processors_absent():
-    # active_processors=None -> derived from use_* defaults (hash on, model off), and the
-    # flags stay consistent with the derived list.
+    # active_processors=None -> derived from use_* defaults (hash on, model off).
+    # The legacy fallback preserves v1.1.6 behavior: hash_dedup + ssim_dedup, and
+    # motion_gate stays opt-in (NOT auto-injected).
     cfg = FilterFrameDedup.normalize_config({})
-    assert 'motion_gate' in cfg.active_processors
+    assert 'motion_gate' not in cfg.active_processors
+    assert 'hash_dedup' in cfg.active_processors
     assert 'ssim_dedup' in cfg.active_processors
     assert cfg.use_model_dedup is False
