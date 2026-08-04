@@ -10,7 +10,7 @@ FrameSelect release notes
 - Grant `id-token: write` for keyless (cosign) SBOM
 - Fix RELEASE.md header (stray H1 + duplicated block)
 - Pin Docker base to `python:3.11.12-slim`
-- Point compose utility images at `openfilter-{video-in,webvis}:1.2.1`
+- Point compose utility images at `openfilter-{video-in,webvis}:1.2.1` and pin the filter's own image to the release version (`openfilter-frame-dedup:1.2.1`)
 - Update dev-tooling floors and switch to ranges
 
 ## v1.2.0 - 2026-07-31
