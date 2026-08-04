@@ -46,6 +46,7 @@ docker-compose up
 | `VIDEO_INPUT` | `../data/sample-video.mp4` | Input video file path |
 | `OUTPUT_FOLDER` | `./output` | Directory to save deduplicated frames |
 | `SAVE_IMAGES` | `true` | Whether to save images to disk |
+| `USE_HASH_DEDUP` | `true` | Whether to use the hash-based deduplication processor (legacy flag; ignored when `ACTIVE_PROCESSORS` is set) |
 | `HASH_THRESHOLD` | `5` | Minimum hash difference to consider unique |
 | `MOTION_THRESHOLD` | `1200` | Minimum motion intensity threshold |
 | `MIN_TIME_BETWEEN_FRAMES` | `1.0` | Minimum time between saved frames (seconds) |
@@ -54,6 +55,11 @@ docker-compose up
 | `DEBUG` | `false` | Enable debug logging |
 | `FORWARD_DEDUPED_FRAMES` | `false` | Forward deduplicated frames in side channel |
 | `FORWARD_UPSTREAM_DATA` | `true` | Forward data from upstream filters |
+| `ACTIVE_PROCESSORS` | `["motion_gate", "hash_dedup", "ssim_dedup"]` | List of processor names determining pipeline filters and execution order |
+| `MOTION_GATE_PIXEL_DELTA_THRESHOLD` | `1.5` | Mean per-pixel absolute delta above which the motion gate lets a frame pass |
+| `MOTION_GATE_EVAL_WIDTH` | `480` | Width (px) the motion gate downsamples frames to before computing the delta |
+| `MOTION_GATE_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based motion gating (values $> 1$ weight small objects higher) |
+| `SSIM_PATCH_GRID_SIZE` | `1` | Grid size $L$ for $L \times L$ patch-based SSIM comparisons (values $> 1$ weight small objects higher) |
 
 ### Configuration Examples
 
@@ -254,16 +260,14 @@ The filter supports a special **side channel** called `deduped` that contains on
 
 ## How It Works
 
-The filter uses a multi-stage approach:
+The filter executes a completely customizable, sequential processing pipeline configured via `active_processors`:
 
-1. **Hash Analysis**: Computes perceptual, average, and difference hashes
-2. **Motion Detection**: Analyzes pixel-level differences between frames
-3. **SSIM Comparison**: Uses Structural Similarity Index for detailed comparison
-4. **Frame Selection**: Saves frames that meet all criteria:
-   - Hash differences exceed threshold OR motion is detected
-   - SSIM score is below threshold
-   - Minimum time has elapsed since last save
-5. **Side Channel Output**: If enabled, forwards saved frames to `deduped` channel
+1. **Pipeline Execution**: Steps are processed in the exact sequential order requested in `active_processors`.
+2. **Motion Gatekeeper**: Optionally evaluates pixel-level delta changes between frames. Supports $L \times L$ grid-based patchified gating (`motion_gate_patch_grid_size > 1`) to weight local motion of small objects higher.
+3. **Hash Analysis**: Computes perceptual, average, and difference hashes.
+4. **SSIM Comparison**: Uses Structural Similarity Index (SSIM) for detailed structural changes. Supports $L \times L$ grid-based patchified SSIM (`ssim_patch_grid_size > 1`) to detect structural changes of small local objects.
+5. **Frame Selection**: Saves frames that successfully pass all active filtering criteria and where the minimum time threshold has elapsed.
+6. **Side Channel Output**: If enabled, forwards saved frames to the `deduped` channel.
 
 ## Output
 

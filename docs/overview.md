@@ -118,50 +118,49 @@ Filter.run_multi(filters, exit_time=3600.0)  # 1 hour
 
 ## How it Works
 
-The filter uses a multi-stage approach to detect and save unique frames:
+The filter uses a sequential, multi-stage processing pipeline built from a configurable list of active processors to detect and save unique frames:
 
-1. **Frame Input Stage**
-   - Receives video frames from the input source
-   - Supports both file-based and stream-based input
-   - Can process frames in real-time or from a video file
+1. **Pipeline Ordering and Execution**
+   - Active stages and execution order are defined via `active_processors` (e.g., `["motion_gate", "hash_dedup", "ssim_dedup", "model_dedup"]`).
+   - If a frame fails any active check, pipeline execution stops immediately, bypassing more expensive downstream checks (such as the model forward pass).
 
-2. **Hash-based Detection Stage**
-   - Computes three types of image hashes:
-     - Perceptual Hash (pHash): Detects structural changes using DCT
-     - Average Hash (aHash): Detects overall image changes
-     - Difference Hash (dHash): Detects edge and gradient changes
-   - Compares current frame hashes with previous frame hashes
-   - Detects significant changes based on hash differences
+2. **Ultra-fast Motion Gatekeeper Stage (`motion_gate`)**
+   - An extremely fast first-pass stage that computes average pixel intensity differences (deltas) between consecutive frames.
+   - Can optionally run on a grid patchify mode (defined by `motion_gate_patch_grid_size`).
+   - Acts as a coarse pre-filter to reject static or near-static frames with zero GPU overhead.
 
-3. **Motion Detection Stage**
-   - Analyzes pixel-level differences between consecutive frames
-   - Uses absolute difference and thresholding to detect motion
-   - Helps identify frames with significant movement
+3. **Hash-based Detection Stage (`hash_dedup`)**
+   - Computes three robust image hashes (Perceptual, Average, and Difference Hashing).
+   - Compares current hashes to the last saved frame to identify structural alterations.
+   - Integrates a pixel-level `motion_threshold` change count to capture local motion.
 
-4. **SSIM-based Refinement Stage**
-   - Uses Structural Similarity Index (SSIM) for detailed comparison
-   - Provides a more nuanced similarity score between frames
-   - Helps prevent saving frames that are too similar
+4. **SSIM-based Stage (`ssim_dedup`)**
+   - Uses Structural Similarity Index (SSIM) to evaluate pixel structure and luminance similarity.
+   - Supports grid-based patch partitioning (`ssim_patch_grid_size`) for local similarity analysis.
+   - Prevents saving visually redundant frames.
 
-5. **Frame Selection Criteria**
-   A frame is saved if it meets ALL of these conditions:
-   - Hash differences exceed the threshold OR motion is detected
-   - SSIM score is below the threshold (frames are different enough)
-   - Minimum time has elapsed since the last saved frame
+5. **Model-based Feature Cosine Stage (`model_dedup`)**
+   - Extracts deep features from vision models (e.g., ResNet or DINOv3) hosted on Hugging Face.
+   - Computes cosine similarity of features against the last saved frame.
+   - Catches complex, non-local semantic visual changes.
 
-6. **Output Stage**
-   - Saves selected frames to the specified output directory (if `save_images=True`)
-   - Maintains a counter for frame numbering
-   - Updates timing information for frame selection
-   - Can operate in "detection-only" mode when `save_images=False`
+6. **Deferred Reference Frame Architecture**
+   - All check operations are pure. No processor mutates its reference frame, hashes, or stashed features unless a frame is fully accepted by all active steps.
+   - This ensures that slowly-changing footage is correctly compared against the **last saved frame** rather than the previous frame (which would otherwise suffer from undetected drift).
+
+7. **Output Stage**
+   - Saves accepted unique frames sequentially to `/output` (if `save_images=True`).
+   - Forwards frames asynchronously in a special `deduped` side-channel (if `forward_deduped_frames=True`).
 
 ## Structure
-The filtering pipeline is composed of multiple stages:
+The filtering pipeline is composed of multiple configurable, sequential processor stages:
 
-- Video Input (VideoIn): Reads the input video file
-- HashFrameProcessor: Processes frames to detect motion or significant hash changes
-- SSIMProcessor: Further refines the frame selection by comparing SSIM scores
-- Output: Saves selected frames to the specified directory
+- **Video Input (VideoIn)**: Reads the input video frames.
+- **FastMotionGatekeeper (`motion_gate`)**: An ultra-fast, lightweight frame differencing stage that acts as a first-pass gatekeeper. Supports optional patch-based grids.
+- **HashFrameProcessor (`hash_dedup`)**: Computes and compares three types of image hashes (pHash, aHash, dHash) combined with motion detection.
+- **SSIMProcessor (`ssim_dedup`)**: Refines frame selection by comparing SSIM scores globally or across a patch-based grid.
+- **ModelProcessor (`model_dedup`)**: Uses high-dimensional features extracted from Hugging Face models (e.g. `facebook/dinov3` or `microsoft/resnet-18`) and cosine similarity thresholds.
+- **Output**: Saves accepted unique frames to the specified directory.
 
 ## Example Output
 
@@ -245,10 +244,19 @@ Use this filter when:
 |-----|------|---------|-------------|
 | `id` | `string` | _auto_ | Filter instance identifier |
 | `outputs` | `string[]` | _required_ | Output destinations |
+| `active_processors` | `string[]` \| `null` | `None` | Ordered list of pipeline stages to execute. Available: `["motion_gate", "hash_dedup", "ssim_dedup", "model_dedup"]`. If `None`, legacy defaults are used. Empty list raises. |
+| `use_hash_dedup` | `boolean` | `true` | Use hash-based deduplication (when `active_processors` is `None`) |
+| `use_model_dedup` | `boolean` | `false` | Use model-based deduplication (when `active_processors` is `None`) |
 | `hash_threshold` | `int` | `5` | Minimum hash difference to consider a frame unique |
 | `motion_threshold` | `int` | `1200` | Minimum motion intensity to consider for processing |
 | `min_time_between_frames` | `float` | `1.0` | Minimum time (in seconds) between saved frames |
 | `ssim_threshold` | `float` | `0.90` | SSIM score threshold (lower = more dissimilar) |
+| `ssim_patch_grid_size` | `int` | `1` | Grid dimension L for LxL patch-based SSIM |
+| `model_dedup_threshold` | `float` | `0.90` | Cosine similarity threshold for model features |
+| `model_hf_id` | `string` | `"facebook/dinov3-vits16-pretrain-lvd1689m"` | Hugging Face model path/ID for feature extraction |
+| `motion_gate_pixel_delta_threshold` | `float` | `1.5` | Pixel delta threshold for motion gatekeeper |
+| `motion_gate_eval_width` | `int` | `480` | Resized evaluation width for motion gatekeeper |
+| `motion_gate_patch_grid_size` | `int` | `1` | Grid dimension L for LxL patch-based motion gating |
 | `roi` | `tuple` \| `null` | `None` | ROI as `(x, y, width, height)` or `None` for full frame |
 | `output_folder` | `string` | `"/output"` | Directory to save selected frames |
 | `save_images` | `boolean` | `true` | Whether to save images to disk |

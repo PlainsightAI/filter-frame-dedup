@@ -14,6 +14,9 @@ class TestFilterFrameDedup(unittest.TestCase):
         # Setting up test configuration for FilterFrameDedup and initializing it
         config = {
             'config': {
+                # motion_gate is opt-in; request it explicitly so tests that rely
+                # on self.filter.motion_gatekeeper keep the v1.1.6 default pipeline
+                'active_processors': ["motion_gate", "hash_dedup", "ssim_dedup"],
                 'hash_threshold': 5,
                 'motion_threshold': 1200,  # Match the default in filter
                 'min_time_between_frames': 0.1,  # Reduced from 1.0 to 0.1 for testing
@@ -238,12 +241,403 @@ class TestFilterFrameDedup(unittest.TestCase):
         self.assertIn('main', processed)
         self.assertIn('deduped', processed)
 
+    def generate_gradual_mock_frame(self, w, h, square_intensity):
+        # Generate a base black image
+        image = np.zeros((h, w, 3), dtype=np.uint8)
+        # Create a 40x40 square with the given intensity in the ROI area
+        image[10:50, 10:50, :] = square_intensity
+        mock_frame = MagicMock()
+        mock_frame.has_image = True
+        mock_frame.rw_bgr.image = image
+        mock_frame.data = MagicMock()
+        mock_frame.data.copy.return_value = {}
+        return mock_frame
+
+    def test_gradual_change_detection(self):
+        # Set min_time_between_frames to 0 to focus on image changes
+        self.filter.config.min_time_between_frames = 0.0
+        # Set motion gatekeeper threshold to 0 to let tiny test changes pass
+        self.filter.motion_gatekeeper.pixel_delta_threshold = 0.0
+        # Set high hash threshold so we isolate motion detection
+        self.filter.config.hash_threshold = 100
+        # Set high SSIM threshold because our changing region is very small compared to the whole image
+        self.filter.config.ssim_threshold = 0.9999
+        
+        # Frame 1: Base image with square at intensity 0
+        frame1 = self.generate_gradual_mock_frame(1280, 720, 0)
+        self.filter.process({'main': frame1})
+        self.assertEqual(len(os.listdir('test_frames')), 1)
+
+        # Process a sequence of frames where the square gradually increases in intensity by 5 each step.
+        # Step-to-step difference is always 5, which is below the motion threshold of 25,
+        # so frame-by-frame comparison would never register any motion.
+        # But comparing to the last saved frame (intensity 0) will eventually exceed 25.
+        for i in range(1, 10):
+            intensity = i * 5
+            frame = self.generate_gradual_mock_frame(1280, 720, intensity)
+            self.filter.process({'main': frame})
+
+        # Under the old implementation (frame-to-frame comparison), only 1 frame (the first one) is saved
+        # because the difference between adjacent frames is always 5 (which is below the threshold of 25).
+        # Under the new implementation (comparing to the last saved frame), once the intensity reaches 30 (step 6),
+        # the difference from the last saved frame (0) is 30, which is above 25.
+        # Since the square is 40x40 = 1600 pixels and 1600 > motion_threshold (1200), it registers motion and saves!
+        saved_count = len(os.listdir('test_frames'))
+        self.assertGreater(saved_count, 1)
+
+    def test_hash_processor_optional_legacy_fallback(self):
+        # Legacy fallback (no active_processors) with use_hash_dedup=False preserves
+        # v1.1.6 behavior: only ssim_dedup, no auto-injected motion_gate, no hash.
+        from filter_frame_dedup.filter import FilterFrameDedupConfig, FilterFrameDedup
+        config_dict = {
+            'config': {
+                'use_hash_dedup': False,
+                'output_folder': 'test_frames',
+                'save_images': True,
+                'roi': None,
+                'forward_deduped_frames': False
+            }
+        }
+        custom_filter = FilterFrameDedup(config_dict)
+        custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+        custom_filter.setup(custom_filter.config)
+
+        # Verify hash processor is disabled/None
+        self.assertIsNone(custom_filter.hash_processor)
+        # motion_gate is opt-in and must NOT be auto-added by the legacy fallback
+        self.assertIsNone(custom_filter.motion_gatekeeper)
+
+        # Verify pipeline structure
+        pipeline_names = [step["name"] for step in custom_filter.pipeline]
+        self.assertNotIn("Motion Gatekeeper", pipeline_names)
+        self.assertNotIn("Hash Processor", pipeline_names)
+        self.assertIn("SSIM Processor", pipeline_names)
+
+        # Test processing frames
+        frame1 = self.generate_mock_frame(1280, 720, (255, 0, 0))
+        processed1 = custom_filter.process({'main': frame1})
+        self.assertIn('main', processed1)
+
+    def test_patchified_motion_gate(self):
+        # Frame 1: Base black image
+        frame1 = np.zeros((720, 1280, 3), dtype=np.uint8)
+        # Frame 2: Only a small region (50x50) has a high change in intensity (+100)
+        # On the full image, average delta is ~0.27 (below default threshold of 1.5)
+        # But in a 4x4 grid, the patch containing it has a high average delta (~4.3)
+        frame2 = np.zeros((720, 1280, 3), dtype=np.uint8)
+        frame2[50:100, 50:100, :] = 100
+
+        from filter_frame_dedup.filter import FilterFrameDedup
+        # 1. With patch_grid_size = 1 (default): should return False (motion ignored)
+        config_dict_non_patch = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'motion_gate_patch_grid_size': 1,
+                'motion_gate_pixel_delta_threshold': 1.5,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        filter_non_patch = FilterFrameDedup(config_dict_non_patch)
+        filter_non_patch.config = filter_non_patch.normalize_config(filter_non_patch.config)
+        filter_non_patch.setup(filter_non_patch.config)
+
+        filter_non_patch.motion_gatekeeper.should_process_frame(frame1)
+        filter_non_patch.motion_gatekeeper.update_reference_frame(frame1)
+        self.assertFalse(filter_non_patch.motion_gatekeeper.should_process_frame(frame2))
+
+        # 2. With patch_grid_size = 4: should return True (motion caught)
+        config_dict_patch = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'motion_gate_patch_grid_size': 4,
+                'motion_gate_pixel_delta_threshold': 1.5,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        filter_patch = FilterFrameDedup(config_dict_patch)
+        filter_patch.config = filter_patch.normalize_config(filter_patch.config)
+        filter_patch.setup(filter_patch.config)
+
+        filter_patch.motion_gatekeeper.should_process_frame(frame1)
+        filter_patch.motion_gatekeeper.update_reference_frame(frame1)
+        self.assertTrue(filter_patch.motion_gatekeeper.should_process_frame(frame2))
+
+    def test_patchified_ssim(self):
+        # Frame 1: Base white image
+        frame1 = np.full((720, 1280, 3), 255, dtype=np.uint8)
+        # Frame 2: Only a small region (50x50) is black.
+        # Across the whole image, SSIM is extremely high (~0.999), above threshold of 0.99
+        # But in a 4x4 grid, the patch containing this change will have low SSIM score
+        frame2 = np.full((720, 1280, 3), 255, dtype=np.uint8)
+        frame2[50:100, 50:100, :] = 0
+
+        from filter_frame_dedup.filter import FilterFrameDedup
+        # 1. With ssim_patch_grid_size = 1 (default): should return False (ssim threshold not reached, ignored)
+        config_dict_non_patch = {
+            'config': {
+                'ssim_patch_grid_size': 1,
+                'ssim_threshold': 0.99,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        filter_non_patch = FilterFrameDedup(config_dict_non_patch)
+        filter_non_patch.config = filter_non_patch.normalize_config(filter_non_patch.config)
+        filter_non_patch.setup(filter_non_patch.config)
+
+        filter_non_patch.ssim_processor.should_save_frame(frame1)
+        filter_non_patch.ssim_processor.update_reference_frame(frame1)
+        self.assertFalse(filter_non_patch.ssim_processor.should_save_frame(frame2))
+
+        # 2. With ssim_patch_grid_size = 4: should return True (local change caught)
+        config_dict_patch = {
+            'config': {
+                'ssim_patch_grid_size': 4,
+                'ssim_threshold': 0.99,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        filter_patch = FilterFrameDedup(config_dict_patch)
+        filter_patch.config = filter_patch.normalize_config(filter_patch.config)
+        filter_patch.setup(filter_patch.config)
+
+        filter_patch.ssim_processor.should_save_frame(frame1)
+        filter_patch.ssim_processor.update_reference_frame(frame1)
+        self.assertTrue(filter_patch.ssim_processor.should_save_frame(frame2))
+
+    def test_active_processors_ordering(self):
+        # Configure custom active processors list
+        config_dict = {
+            'config': {
+                'active_processors': ["ssim_dedup", "motion_gate"],
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        from filter_frame_dedup.filter import FilterFrameDedup
+        custom_filter = FilterFrameDedup(config_dict)
+        custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+        custom_filter.setup(custom_filter.config)
+
+        # Assert only ssim and motion_gate are initialized
+        self.assertIsNotNone(custom_filter.ssim_processor)
+        self.assertIsNotNone(custom_filter.motion_gatekeeper)
+        self.assertIsNone(custom_filter.hash_processor)
+        self.assertIsNone(custom_filter.model_processor)
+
+        # Assert that pipeline step execution order is exactly as requested
+        pipeline_names = [step["name"] for step in custom_filter.pipeline]
+        self.assertEqual(pipeline_names, ["SSIM Processor", "Motion Gatekeeper"])
+
     def test_invalid_roi(self):
         # Testing ROI extraction with invalid ROI
         frame = np.full((1280,720,3), (255,0,0), dtype=np.uint8)
         self.filter.config.roi = (2000,2000,100)
         with self.assertRaises(ValueError):
             self.filter.hash_processor.extract_roi(frame)
+
+    def test_active_processors_env_string_form(self):
+        # active_processors can arrive as an env-var STRING (not a Python list)
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': '["motion_gate", "hash_dedup"]',
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        custom_filter = FilterFrameDedup(config_dict)
+        custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+        custom_filter.setup(custom_filter.config)
+
+        # The string is parsed into a real list, preserving order
+        self.assertEqual(custom_filter.config.active_processors, ["motion_gate", "hash_dedup"])
+        # Legacy flags are kept in sync with the resolved list
+        self.assertTrue(custom_filter.config.use_hash_dedup)
+        self.assertFalse(custom_filter.config.use_model_dedup)
+
+        pipeline_names = [step["name"] for step in custom_filter.pipeline]
+        self.assertEqual(pipeline_names, ["Motion Gatekeeper", "Hash Processor"])
+
+    def test_model_dedup_ordering_reference_not_mutated_on_rejection(self):
+        # When model_dedup runs BEFORE a later rejecting step, the model reference
+        # must only be updated after the frame is accepted by every step.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["model_dedup", "ssim_dedup"],
+                'roi': None,
+                'ssim_threshold': 0.90,
+                'output_folder': 'test_frames',
+                'save_images': False,
+                'forward_deduped_frames': False
+            }
+        }
+        # Patch ModelProcessor so no real HF model is loaded; the mock always
+        # reports the frame as unique so the later SSIM step is the rejecter.
+        with patch('filter_frame_dedup.model_processor.ModelProcessor') as MockMP:
+            mock_instance = MockMP.return_value
+            mock_instance.frame_is_unique.return_value = True
+
+            custom_filter = FilterFrameDedup(config_dict)
+            custom_filter.config = custom_filter.normalize_config(custom_filter.config)
+            custom_filter.setup(custom_filter.config)
+
+            # model_dedup must be first in the pipeline, ssim second
+            pipeline_names = [step["name"] for step in custom_filter.pipeline]
+            self.assertEqual(pipeline_names, ["Model Processor", "SSIM Processor"])
+
+            frame1 = self.generate_mock_frame(1280, 720, (255, 0, 0))
+            frame2 = self.generate_mock_frame(1280, 720, (255, 0, 0))  # identical -> SSIM rejects
+
+            custom_filter.process({'main': frame1})  # accepted -> model reference updated once
+            custom_filter.process({'main': frame2})  # rejected by SSIM -> model reference NOT updated
+
+            self.assertEqual(mock_instance.update_reference_frame.call_count, 1)
+
+    def test_empty_active_processors_raises(self):
+        # An empty active_processors (list or env string "[]") must be rejected
+        from filter_frame_dedup.filter import FilterFrameDedup
+        for empty_value in ([], "[]"):
+            config_dict = {
+                'config': {
+                    'active_processors': empty_value,
+                    'output_folder': 'test_frames',
+                    'save_images': False
+                }
+            }
+            with self.assertRaises(ValueError):
+                f = FilterFrameDedup(config_dict)
+                f.config = f.normalize_config(f.config)
+
+    def test_motion_gate_pixel_delta_threshold_upper_bound(self):
+        # A threshold above the 0..255 mean-delta range would reject every frame
+        # forever, silently disabling dedup; it must be rejected at config time.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'motion_gate_pixel_delta_threshold': 300,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        with self.assertRaises(ValueError):
+            f = FilterFrameDedup(config_dict)
+            f.config = f.normalize_config(f.config)
+
+    def test_motion_gate_tiny_frame_resize_no_crash(self):
+        # A wide, 1px-tall frame rounds the resized height to 0 without clamping,
+        # which makes cv2.resize raise. It must be handled gracefully.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["motion_gate"],
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        frame = np.zeros((1, 1920, 3), dtype=np.uint8)  # h=1, w=1920, eval_width=480 -> h*scale rounds to 0
+        # Neither the check nor the reference update should raise
+        self.assertTrue(f.motion_gatekeeper.should_process_frame(frame))
+        f.motion_gatekeeper.update_reference_frame(frame)
+
+    def test_ssim_uncomputable_patch_keeps_frame(self):
+        # When patches are too small to compute SSIM, the comparison is uncomputable
+        # and a dedup filter must fail open (KEEP the frame), not treat it as duplicate.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["ssim_dedup"],
+                'ssim_patch_grid_size': 4,   # 8x8 image -> 2x2 patches -> SSIM uncomputable
+                'ssim_threshold': 0.90,
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        frame1 = np.zeros((8, 8, 3), dtype=np.uint8)
+        frame2 = np.zeros((8, 8, 3), dtype=np.uint8)  # identical, but patches are uncomputable
+        f.ssim_processor.should_save_frame(frame1)
+        f.ssim_processor.update_reference_frame(frame1)
+        # Even for identical frames, an uncomputable patch comparison keeps the frame
+        self.assertTrue(f.ssim_processor.should_save_frame(frame2))
+
+    def test_gradual_change_detection_default_path(self):
+        # When active_processors is None (default legacy fallback), we want to verify 
+        # that ssim_dedup performs compare-to-last-saved instead of frame-to-frame.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'use_hash_dedup': False,  # Only ssim_dedup will be active in legacy fallback
+                'min_time_between_frames': 0.0,
+                'ssim_threshold': 0.9999,  # Very sensitive to small changes
+                'output_folder': 'test_frames',
+                'save_images': True,
+                'roi': None,
+                'forward_deduped_frames': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        # Clear any existing test frames
+        if os.path.exists('test_frames'):
+            for file in os.listdir('test_frames'):
+                os.remove(os.path.join('test_frames', file))
+        else:
+            os.makedirs('test_frames')
+
+        # Frame 1: Base image with square at intensity 0
+        frame1 = self.generate_gradual_mock_frame(1280, 720, 0)
+        f.process({'main': frame1})
+        self.assertEqual(len(os.listdir('test_frames')), 1)
+
+        # Process a sequence of frames where the square gradually increases in intensity by 5 each step.
+        # Under v1.1.6, ssim_dedup did frame-to-frame, meaning only 1 frame (the first) is saved because
+        # the difference between step i and i-1 is always below the threshold.
+        # Under the new deferred-reference design, ssim_dedup compares against the last SAVED frame,
+        # so it will eventually exceed the threshold and save additional frames.
+        for i in range(1, 10):
+            intensity = i * 5
+            frame = self.generate_gradual_mock_frame(1280, 720, intensity)
+            f.process({'main': frame})
+
+        saved_count = len(os.listdir('test_frames'))
+        self.assertGreater(saved_count, 1)
+
+    def test_active_processors_canonicalization_and_deduplication(self):
+        # When active_processors contains duplicate names or alias aliases (like hash_processor and hash_dedup),
+        # they must be canonicalized and deduplicated to prevent duplicate execution of steps.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["hash_dedup", "hash_processor", "ssim_processor", "ssim_dedup", "ssim_processor"],
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        # Confirm the list is canonicalized and deduplicated
+        self.assertEqual(f.config.active_processors, ["hash_dedup", "ssim_dedup"])
+        
+        # Confirm the built pipeline has exactly one Hash Processor step and one SSIM Processor step
+        pipeline_names = [step["name"] for step in f.pipeline]
+        self.assertEqual(pipeline_names, ["Hash Processor", "SSIM Processor"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -15,6 +15,12 @@ class HashFrameProcessor:
         self.prev_dhash = None
         self.prev_frame = None
         self.last_saved_time = 0  # Initialize to 0 instead of current time
+        # Hashes computed by the most recent should_process_frame call, promoted
+        # by update_reference_frame so the accepted frame is not hashed twice.
+        self._pending_phash = None
+        self._pending_ahash = None
+        self._pending_dhash = None
+        self._pending_frame = None
 
     def extract_roi(self, image: np.ndarray) -> np.ndarray:
         """
@@ -120,6 +126,12 @@ class HashFrameProcessor:
         ahash = self.compute_ahash(image)
         dhash = self.compute_dhash(image)
 
+        # Stash so update_reference_frame can reuse them instead of recomputing
+        self._pending_phash = phash
+        self._pending_ahash = ahash
+        self._pending_dhash = dhash
+        self._pending_frame = image
+
         # Check motion detection
         motion_detected = self.prev_frame is None or self.is_motion_detected(self.prev_frame, image)
 
@@ -144,21 +156,26 @@ class HashFrameProcessor:
             print(f"Time elapsed since last save: {time_elapsed:.2f}s")
             print(f"Should process: {(hash_changed or motion_detected) and (time_elapsed >= self.config.min_time_between_frames)}")
 
-        # Update previous values
-        self.prev_phash = phash
-        self.prev_ahash = ahash
-        self.prev_dhash = dhash
-        self.prev_frame = image
-
         # For the first frame (when last_saved_time is 0), always process if there are changes
         if self.last_saved_time == 0:
             return hash_changed or motion_detected
 
         return (hash_changed or motion_detected) and (time_elapsed >= self.config.min_time_between_frames)
 
-    def update_last_saved_time(self):
+    def update_reference_frame(self, image: np.ndarray):
         """
-        Update the last saved time when a frame is actually saved.
-        This should be called by the filter after successfully saving a frame.
+        Update the reference frame, hashes, and last saved time to the newly saved/key frame.
+
+        Reuses the hashes computed by the preceding should_process_frame call for the
+        same image; only recomputes if this image was not the one just evaluated.
         """
+        if self._pending_frame is image:
+            self.prev_phash = self._pending_phash
+            self.prev_ahash = self._pending_ahash
+            self.prev_dhash = self._pending_dhash
+        else:
+            self.prev_phash = self.compute_phash(image)
+            self.prev_ahash = self.compute_ahash(image)
+            self.prev_dhash = self.compute_dhash(image)
+        self.prev_frame = image
         self.last_saved_time = time.time() 
