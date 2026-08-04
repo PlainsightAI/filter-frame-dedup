@@ -10,7 +10,7 @@
 ### Changed
 - Motion gating and patchify mode (SSIM + motion gate) are now first-class, reorderable pipeline steps.
 - Reference-frame updates are strictly deferred: each processor's check is pure and its reference is updated only after a frame is accepted by every step.
-- Legacy fallback (when `active_processors` is unset) preserves v1.1.6 behavior and no longer injects `motion_gate`; the motion gate stays opt-in via explicit `active_processors`.
+- Legacy fallback (when `active_processors` is unset) preserves v1.1.6 processor order and no longer injects `motion_gate`; the motion gate stays opt-in via explicit `active_processors`.
 - Renamed the internal `saved_frame_count` counter to `unique_frame_count` and clarified the shutdown log ("Total unique frames").
 
 ### Fixed
