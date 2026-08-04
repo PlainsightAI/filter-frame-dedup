@@ -39,11 +39,27 @@ class FilterFrameDedupConfig(FilterConfig):
     
 class FilterFrameDedup(Filter):
     """
-    A filter that:
-    1) Detects duplicate frames using multiple methods (hash-based and SSIM)
-    2) Saves only unique frames based on configurable thresholds
-    3) Supports ROI-based processing (or full image when ROI is None)
-    4) Maintains minimum time between saved frames
+    A sequential, configurable frame deduplication filter that filters out duplicate frames 
+    from video streams using multiple pluggable processors in a specified order.
+
+    Processors:
+    1) Motion Gatekeeper ('motion_gate'): An ultra-fast frame differencing stage that acts 
+       as a first-pass gatekeeper. Supports patch-based grids.
+    2) Hash Processor ('hash_dedup'): Combines perceptual (pHash), average (aHash), and 
+       difference (dHash) hashing with motion thresholding to detect significant changes.
+    3) SSIM Processor ('ssim_dedup'): Compares Structural Similarity Index (SSIM) values 
+       globally or across a patch-based grid to identify visually distinct frames.
+    4) Model Processor ('model_dedup'): Extracts high-dimensional features using a 
+       Hugging Face vision/CNN model and measures cosine similarity to find duplicates.
+
+    Features:
+    - Pipeline Configuration: Define execution order via `active_processors` (e.g. 
+      `['motion_gate', 'hash_dedup', 'ssim_dedup', 'model_dedup']`).
+    - Deferred Reference Updates: Reference frames and features are updated only after 
+      a frame is fully accepted by all stages in the active pipeline, ensuring robust 
+      comparison against the last saved frame.
+    - ROI Support: Crop images to a Region of Interest (ROI) before checking.
+    - Time-Based Filtering: Enforces a minimum interval (`min_time_between_frames`) between saved frames.
     """
     
     @classmethod
@@ -72,7 +88,7 @@ class FilterFrameDedup(Filter):
             if 'roi' in config and isinstance(config['roi'], str):
                 # Parse tuple string like "(100, 100, 200, 200)"
                 roi_str = config['roi'].strip('()')
-                config['roi'] = tuple(map(int, roi_str.split(', ')))
+                config['roi'] = tuple(map(int, [part.strip() for part in roi_str.split(',')]))
             if 'model_dedup_threshold' in config and isinstance(config['model_dedup_threshold'], str):
                 config['model_dedup_threshold'] = float(config['model_dedup_threshold'])
             if 'motion_gate_pixel_delta_threshold' in config and isinstance(config['motion_gate_pixel_delta_threshold'], str):
@@ -185,6 +201,16 @@ class FilterFrameDedup(Filter):
             if p not in valid_processor_names:
                 raise ValueError(f"Invalid processor name in active_processors: '{p}'. Must be one of {sorted(list(valid_processor_names))}")
 
+        # Canonicalize and deduplicate processor names to avoid redundant execution of same stages
+        canonical_map = {
+            "motion_gatekeeper": "motion_gate",
+            "hash_processor": "hash_dedup",
+            "ssim_processor": "ssim_dedup",
+            "model_processor": "model_dedup"
+        }
+        canonicalized = [canonical_map.get(p, p) for p in config.active_processors]
+        config.active_processors = list(dict.fromkeys(canonicalized))
+
         # An empty pipeline dedups nothing; reject it explicitly (e.g. [] or the env string "[]")
         if len(config.active_processors) == 0:
             raise ValueError("active_processors must contain at least one processor")
@@ -192,8 +218,8 @@ class FilterFrameDedup(Filter):
         # active_processors is authoritative: keep the legacy use_* flags in sync with it
         # so each processor's own guard (e.g. ModelProcessor.__init__, which raises when
         # use_model_dedup is False) agrees with the pipeline that was actually requested.
-        config.use_hash_dedup = any(p in ("hash_dedup", "hash_processor") for p in config.active_processors)
-        config.use_model_dedup = any(p in ("model_dedup", "model_processor") for p in config.active_processors)
+        config.use_hash_dedup = any(p == "hash_dedup" for p in config.active_processors)
+        config.use_model_dedup = any(p == "model_dedup" for p in config.active_processors)
 
         return config
 

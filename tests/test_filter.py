@@ -573,5 +573,71 @@ class TestFilterFrameDedup(unittest.TestCase):
         # Even for identical frames, an uncomputable patch comparison keeps the frame
         self.assertTrue(f.ssim_processor.should_save_frame(frame2))
 
+    def test_gradual_change_detection_default_path(self):
+        # When active_processors is None (default legacy fallback), we want to verify 
+        # that ssim_dedup performs compare-to-last-saved instead of frame-to-frame.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'use_hash_dedup': False,  # Only ssim_dedup will be active in legacy fallback
+                'min_time_between_frames': 0.0,
+                'ssim_threshold': 0.9999,  # Very sensitive to small changes
+                'output_folder': 'test_frames',
+                'save_images': True,
+                'roi': None,
+                'forward_deduped_frames': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        # Clear any existing test frames
+        if os.path.exists('test_frames'):
+            for file in os.listdir('test_frames'):
+                os.remove(os.path.join('test_frames', file))
+        else:
+            os.makedirs('test_frames')
+
+        # Frame 1: Base image with square at intensity 0
+        frame1 = self.generate_gradual_mock_frame(1280, 720, 0)
+        f.process({'main': frame1})
+        self.assertEqual(len(os.listdir('test_frames')), 1)
+
+        # Process a sequence of frames where the square gradually increases in intensity by 5 each step.
+        # Under v1.1.6, ssim_dedup did frame-to-frame, meaning only 1 frame (the first) is saved because
+        # the difference between step i and i-1 is always below the threshold.
+        # Under the new deferred-reference design, ssim_dedup compares against the last SAVED frame,
+        # so it will eventually exceed the threshold and save additional frames.
+        for i in range(1, 10):
+            intensity = i * 5
+            frame = self.generate_gradual_mock_frame(1280, 720, intensity)
+            f.process({'main': frame})
+
+        saved_count = len(os.listdir('test_frames'))
+        self.assertGreater(saved_count, 1)
+
+    def test_active_processors_canonicalization_and_deduplication(self):
+        # When active_processors contains duplicate names or alias aliases (like hash_processor and hash_dedup),
+        # they must be canonicalized and deduplicated to prevent duplicate execution of steps.
+        from filter_frame_dedup.filter import FilterFrameDedup
+        config_dict = {
+            'config': {
+                'active_processors': ["hash_dedup", "hash_processor", "ssim_processor", "ssim_dedup", "ssim_processor"],
+                'output_folder': 'test_frames',
+                'save_images': False
+            }
+        }
+        f = FilterFrameDedup(config_dict)
+        f.config = f.normalize_config(f.config)
+        f.setup(f.config)
+
+        # Confirm the list is canonicalized and deduplicated
+        self.assertEqual(f.config.active_processors, ["hash_dedup", "ssim_dedup"])
+        
+        # Confirm the built pipeline has exactly one Hash Processor step and one SSIM Processor step
+        pipeline_names = [step["name"] for step in f.pipeline]
+        self.assertEqual(pipeline_names, ["Hash Processor", "SSIM Processor"])
+
 if __name__ == "__main__":
     unittest.main()

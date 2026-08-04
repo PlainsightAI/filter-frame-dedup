@@ -9,8 +9,8 @@
 
 ### Changed
 - Motion gating and patchify mode (SSIM + motion gate) are now first-class, reorderable pipeline steps.
-- Reference-frame updates are strictly deferred: each processor's check is pure and its reference is updated only after a frame is accepted by every step.
-- Legacy fallback (when `active_processors` is unset) preserves v1.1.6 processor order and no longer injects `motion_gate`; the motion gate stays opt-in via explicit `active_processors`.
+- Reference-frame updates are strictly deferred: each processor's check is pure and its reference is updated only after a frame is accepted by every step. NOTE: This changes deduplication behavior on slowly-changing footage from frame-to-frame (v1.1.6) to compare-to-last-saved. This corrects gradual change detection but can result in increased saved-frame counts on very slow video streams.
+- Legacy fallback (when `active_processors` is unset) preserves v1.1.6 processor order and no longer injects `motion_gate` (which remains opt-in via explicit `active_processors`). Note that the fallback path also inherits the new deferred reference-frame compare-to-last-saved behavior.
 - Renamed the internal `saved_frame_count` counter to `unique_frame_count` and clarified the shutdown log ("Total unique frames").
 
 ### Fixed
@@ -21,9 +21,7 @@
 
 ### Changed
 - Added handling of different model types (e.g. resnet)
-- Added simple motion gate processor (frame differencing)
-- Added patchify mode for SSIM and motion gate. 
-- Alow user to configure processors used and the order
+
 
 ## v1.1.5 - 2026-06-23
 

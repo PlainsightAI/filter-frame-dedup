@@ -2,6 +2,9 @@ import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
 from openfilter.filter_runtime.filter import FilterConfig
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SSIMProcessor:
@@ -77,6 +80,7 @@ class SSIMProcessor:
                         # An uncomputable comparison must KEEP the frame (fail-open for a dedup
                         # filter), so force the keep path with a "definitely different" score.
                         score = 0.0
+                        logger.warning("SSIM could not be computed for a very small patch; forcing keep frame.")
 
                     # If ANY patch passes (SSIM is <= ssim_threshold), the entire frame passes
                     if score <= self.config.ssim_threshold:

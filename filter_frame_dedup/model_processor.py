@@ -23,6 +23,8 @@ class ModelProcessor:
             raise
 
         self.last_key_frame_features = None
+        self._pending_feats = None
+        self._pending_frame = None
 
     def _to_feature_vector(self, tensor: torch.Tensor) -> torch.Tensor | None:
         """
@@ -133,6 +135,8 @@ class ModelProcessor:
             bool: True if the image is unique, False otherwise.
         """
         cur_feats = self._extract_image_feats(image)
+        self._pending_feats = cur_feats
+        self._pending_frame = image
 
         if self.last_key_frame_features is None:
             return True
@@ -143,5 +147,11 @@ class ModelProcessor:
     def update_reference_frame(self, image: np.ndarray):
         """
         Update the reference frame features to the newly saved/key frame.
+
+        Reuses the features computed by the preceding frame_is_unique call for the
+        same image; only recomputes if this image was not the one just evaluated.
         """
-        self.last_key_frame_features = self._extract_image_feats(image)
+        if self._pending_frame is image:
+            self.last_key_frame_features = self._pending_feats
+        else:
+            self.last_key_frame_features = self._extract_image_feats(image)
