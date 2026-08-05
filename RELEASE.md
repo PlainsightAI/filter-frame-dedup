@@ -1,5 +1,17 @@
-# v1.2.0
+# Changelog
+FrameSelect release notes
 
+## [Unreleased]
+
+## v1.2.1 - 2026-08-04
+
+### Changed
+- Update `openfilter[all]` to `>=1.2.1`
+- Grant `id-token: write` for keyless (cosign) SBOM
+- Fix RELEASE.md header (stray H1 + duplicated block)
+- Pin Docker base to `python:3.11.12-slim`
+- Point compose utility images at `openfilter-{video-in,webvis}:1.2.1` and pin the filter's own image to the release version (`openfilter-frame-dedup:1.2.1`)
+- Update dev-tooling floors and switch to ranges
 
 ## v1.2.0 - 2026-07-31
 
@@ -31,23 +43,8 @@
 ## v1.1.4 - 2026-04-23
 
 ### Changed
-- Bump openfilter SDK, align CI workflow with shared release gate (source-paths)
-
+- Update the openfilter dependency to `>=0.1.30`, and align the CI workflow with the shared release gate (source-paths).
 - Fix release workflow secret names: `PYPI_API_TOKEN` → `PLAINSIGHT_PYPI_TOKEN`, `DOCKERHUB_TOKEN` → `DOCKERHUB_ACCESS_TOKEN` (org-level secret names). Without this the PyPI / Docker Hub tokens resolved to empty and no package has been published since the migration.
-- Bump openfilter dependency to `>=0.1.30`.
-
-# Changelog
-FrameSelect release notes
-
-## [Unreleased]
-
-### Changed
-
-- Bump openfilter to 1.1.0
-- Bump openfilter to 1.1.1
-- Bump openfilter to 1.1.2
-- Bump the openfilter dependency to 1.2.0
-- Bump the openfilter dependency to 1.2.1
 
 ## v1.1.3 - 2026-04-20
 
@@ -60,7 +57,7 @@ FrameSelect release notes
 
 ### Changed
 - Add CI/CD workflows: create-release.yaml (Docker Hub publishing), ci.yaml (PR testing), security-scan.yaml
-- Bump openfilter dependency to >=0.1.27
+- Update openfilter dependency to >=0.1.27
 
 
 ## v1.1.1 - 2025-09-27
