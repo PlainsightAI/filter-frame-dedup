@@ -15,6 +15,26 @@ class SSIMProcessor:
         self.config = config
         self.prev_frame = None
         self.patch_grid_size = getattr(config, "ssim_patch_grid_size", 1)
+        self.eval_width = int(getattr(config, "ssim_eval_width", 0) or 0)
+
+    def _to_gray(self, frame: np.ndarray) -> np.ndarray:
+        """Grayscale, optionally downscaled to ``ssim_eval_width`` first.
+
+        SSIM cost is linear in pixel count, and a dedup decision does not need full
+        resolution: the motion gatekeeper in this same filter already evaluates at
+        ``motion_gate_eval_width`` (480 by default) for exactly this reason. Resizing
+        before the colour conversion rather than after keeps the conversion cheap too.
+
+        Default is 0, meaning full resolution and byte-identical behaviour to before,
+        because downscaling shifts SSIM scores upward (it smooths sensor noise) and the
+        same ``ssim_threshold`` therefore keeps fewer frames. That is a recall change,
+        so it is opt-in and must be measured per deployment rather than assumed.
+        """
+        if self.eval_width > 0 and frame.shape[1] > self.eval_width:
+            scale = self.eval_width / float(frame.shape[1])
+            height = max(1, int(round(frame.shape[0] * scale)))
+            frame = cv2.resize(frame, (self.eval_width, height), interpolation=cv2.INTER_AREA)
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def compute_ssim(self, frame1: np.ndarray, frame2: np.ndarray) -> float:
         """
@@ -27,10 +47,12 @@ class SSIMProcessor:
         Returns:
             SSIM score between the two frames
         """
-        gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-        score, _ = ssim(gray1, gray2, full=True)
-        return score
+        gray1 = self._to_gray(frame1)
+        gray2 = self._to_gray(frame2)
+        # full=False: only the scalar score is used. full=True additionally builds a
+        # float SSIM map the size of the input, which was allocated and discarded on
+        # every frame.
+        return ssim(gray1, gray2, full=False)
 
     def should_save_frame(self, image: np.ndarray) -> bool:
         """
@@ -47,9 +69,9 @@ class SSIMProcessor:
 
         if self.patch_grid_size > 1:
             L = self.patch_grid_size
-            gray1 = cv2.cvtColor(self.prev_frame, cv2.COLOR_BGR2GRAY)
-            gray2 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
+            gray1 = self._to_gray(self.prev_frame)
+            gray2 = self._to_gray(image)
+
             sh, sw = gray1.shape[:2]
             patch_h = sh // L
             patch_w = sw // L
@@ -74,7 +96,7 @@ class SSIMProcessor:
                         win_size = max(3, win_size - 1)
                     
                     if min_dim >= 3:
-                        score, _ = ssim(gray1_patch, gray2_patch, full=True, win_size=win_size)
+                        score = ssim(gray1_patch, gray2_patch, full=False, win_size=win_size)
                     else:
                         # Fallback for extremely small patches where SSIM cannot be computed.
                         # An uncomputable comparison must KEEP the frame (fail-open for a dedup
@@ -88,7 +110,8 @@ class SSIMProcessor:
             return False
         else:
             ssim_score = self.compute_ssim(self.prev_frame, image)
-            return ssim_score <= self.config.ssim_threshold 
+            # bool(): the comparison yields np.bool_, and the annotation says bool.
+            return bool(ssim_score <= self.config.ssim_threshold)
 
     def update_reference_frame(self, image: np.ndarray):
         """

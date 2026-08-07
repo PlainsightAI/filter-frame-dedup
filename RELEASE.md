@@ -3,6 +3,16 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.3.0 - 2026-08-07
+
+### Added
+- `ssim_eval_width`: compare frames for SSIM at a reduced width instead of full resolution. Default `0` keeps the current full-resolution behaviour. At `480` (the width the motion gatekeeper already uses) SSIM is **7.76x cheaper** on a 2592x1520 source, 213.5 ms -> 27.0 ms.
+
+### Changed
+- SSIM is computed with `full=False`. The previous `full=True` built a float SSIM map the size of the input on every frame and the caller discarded it; dropping it is **1.27x** on its own, 213.5 ms -> 168.5 ms.
+- `SSIMProcessor.should_save_frame` returns a real `bool` rather than `numpy.bool_`, matching its annotation.
+
+
 ## v1.2.1 - 2026-08-04
 
 ### Changed
