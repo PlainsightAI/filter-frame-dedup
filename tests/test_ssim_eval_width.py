@@ -104,3 +104,42 @@ class TestKeepDecisionStillWorks:
         p.update_reference_frame(img)
         # Same frame, so every patch scores ~1.0 and none is below threshold: drop it.
         assert p.should_save_frame(img.copy()) is False
+
+
+class TestTinyEvalWidthIsRejectedNotCrashed:
+    """A width below the SSIM window used to raise from inside scikit-image.
+
+    `compute_ssim` called ssim() with no win_size, so scikit-image used its default of
+    7 and raised "win_size exceeds image extent" once the downscaled frame was smaller
+    than that. The patch-grid path already clamped win_size; the whole-frame path did
+    not. Config now rejects it up front, and the method clamps defensively for callers
+    that bypass config.
+    """
+
+    @pytest.mark.parametrize("width", [1, 3, 6])
+    def test_config_rejects_a_width_below_the_ssim_window(self, width):
+        from filter_frame_dedup.filter import FilterFrameDedup, FilterFrameDedupConfig
+
+        with pytest.raises(ValueError, match="at least 7"):
+            FilterFrameDedup.normalize_config(
+                FilterFrameDedupConfig({"ssim_eval_width": width}))
+
+    @pytest.mark.parametrize("width", [0, 7, 480])
+    def test_config_accepts_zero_and_anything_from_seven_up(self, width):
+        from filter_frame_dedup.filter import FilterFrameDedup, FilterFrameDedupConfig
+
+        conf = FilterFrameDedup.normalize_config(
+            FilterFrameDedupConfig({"ssim_eval_width": width}))
+        assert conf.get("ssim_eval_width") == width
+
+    def test_compute_ssim_clamps_the_window_instead_of_raising(self):
+        """Called directly with a tiny frame, it must not raise."""
+        p = SSIMProcessor(cfg(ssim_eval_width=8))
+        small = np.random.default_rng(0).integers(0, 255, (5, 8, 3), dtype=np.uint8)
+        assert p.compute_ssim(small, small.copy()) == pytest.approx(1.0, abs=1e-5)
+
+    def test_compute_ssim_fails_open_below_the_minimum(self):
+        """Uncomputable means keep the frame, never drop it."""
+        p = SSIMProcessor(cfg(ssim_eval_width=0))
+        tiny = np.zeros((2, 2, 3), dtype=np.uint8)
+        assert p.compute_ssim(tiny, tiny.copy()) == 0.0

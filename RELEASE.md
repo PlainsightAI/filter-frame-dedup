@@ -3,6 +3,11 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.3.1 - 2026-08-07
+
+### Fixed
+- An `ssim_eval_width` below 7 crashed the whole-frame SSIM path. scikit-image defaults to `win_size=7` and raises `win_size exceeds image extent` once the downscaled frame is smaller than that; the patch-grid path already clamped the window but the whole-frame path did not. Config now rejects `0 < ssim_eval_width < 7` with an explicit message, and `compute_ssim` clamps the window and fails open (score 0.0, so the frame is kept) for frames too small to compare at all.
+
 ## v1.3.0 - 2026-08-07
 
 ### Added

@@ -179,8 +179,15 @@ class FilterFrameDedup(Filter):
             raise ValueError("SSIM patch grid size must be positive")
         # 0 means "full resolution", any other negative value is a mistake rather than
         # a smaller image, and would otherwise be silently ignored by the resize guard.
+        # Below 7 there is nothing to compare: scikit-image's default SSIM window is
+        # 7x7, and a dedup decision taken on a 6px-wide image is meaningless anyway.
         if config.ssim_eval_width < 0:
             raise ValueError("SSIM evaluation width must be 0 (full resolution) or positive")
+        if 0 < config.ssim_eval_width < 7:
+            raise ValueError(
+                "SSIM evaluation width must be 0 (full resolution) or at least 7; "
+                f"got {config.ssim_eval_width}, which is smaller than the SSIM window"
+            )
         
         # Validate ROI if provided
         if config.roi is not None:

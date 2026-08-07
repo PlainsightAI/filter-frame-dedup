@@ -49,10 +49,24 @@ class SSIMProcessor:
         """
         gray1 = self._to_gray(frame1)
         gray2 = self._to_gray(frame2)
+        # scikit-image defaults to win_size=7 and raises "win_size exceeds image
+        # extent" on anything smaller, so clamp it the way the patch-grid path below
+        # already does. normalize_config rejects an eval width under 7, but a caller
+        # can hand this method a tiny frame directly and a dedup filter should not
+        # crash the pipeline over a comparison it could simply decline.
+        min_dim = min(gray1.shape[0], gray1.shape[1], gray2.shape[0], gray2.shape[1])
+        if min_dim < 3:
+            # Too small to compare at all. Fail open: an uncomputable comparison must
+            # KEEP the frame, and 0.0 is "definitely different" against any threshold.
+            logger.warning("SSIM could not be computed for a %dpx frame; forcing keep frame.", min_dim)
+            return 0.0
+        win_size = min(7, min_dim)
+        if win_size % 2 == 0:
+            win_size = max(3, win_size - 1)
         # full=False: only the scalar score is used. full=True additionally builds a
         # float SSIM map the size of the input, which was allocated and discarded on
         # every frame.
-        return ssim(gray1, gray2, full=False)
+        return ssim(gray1, gray2, full=False, win_size=win_size)
 
     def should_save_frame(self, image: np.ndarray) -> bool:
         """
