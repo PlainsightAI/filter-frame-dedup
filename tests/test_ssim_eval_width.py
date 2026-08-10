@@ -143,3 +143,57 @@ class TestTinyEvalWidthIsRejectedNotCrashed:
         p = SSIMProcessor(cfg(ssim_eval_width=0))
         tiny = np.zeros((2, 2, 3), dtype=np.uint8)
         assert p.compute_ssim(tiny, tiny.copy()) == 0.0
+
+
+class TestExtremeAspectRatioKeepsTheFilterWorking:
+    """A valid width can still produce an unusable height.
+
+    ``normalize_config`` bounds the configured width, but it never sees a frame. On a
+    wide, short source the height scales independently and lands below the SSIM window,
+    at which point ``compute_ssim`` fails open on every frame and the filter silently
+    stops deduplicating. The downscale is skipped for those shapes instead.
+    """
+
+    WIDE_SHORT = (10, 2592)  # height, width
+
+    def test_downscale_is_skipped_when_it_would_flatten_the_frame(self):
+        p = SSIMProcessor(cfg(ssim_eval_width=7))
+        img = frame(1, w=self.WIDE_SHORT[1], h=self.WIDE_SHORT[0])
+
+        # Naively, 2592 -> 7 scales 10 -> 0.027, rounded up to a 1px tall frame.
+        assert p._to_gray(img).shape == self.WIDE_SHORT, \
+            "a downscale that crosses the SSIM window must be skipped, not applied"
+
+    def test_the_decision_survives_instead_of_failing_open(self):
+        """The regression this guards: identical frames must score as identical."""
+        p = SSIMProcessor(cfg(ssim_eval_width=7))
+        img = frame(2, w=self.WIDE_SHORT[1], h=self.WIDE_SHORT[0])
+
+        score = p.compute_ssim(img, img.copy())
+        assert score == pytest.approx(1.0, abs=1e-5), \
+            f"expected a real comparison, got {score} (0.0 means it failed open)"
+
+    def test_a_changed_frame_is_still_detected_as_different(self):
+        p = SSIMProcessor(cfg(ssim_eval_width=7))
+        a = frame(3, w=self.WIDE_SHORT[1], h=self.WIDE_SHORT[0])
+        b = frame(4, w=self.WIDE_SHORT[1], h=self.WIDE_SHORT[0])
+
+        assert p.compute_ssim(a, b) < 0.9, "the comparison must still discriminate"
+
+    def test_the_warning_fires_once_per_shape_not_once_per_frame(self, caplog):
+        p = SSIMProcessor(cfg(ssim_eval_width=7))
+        img = frame(5, w=self.WIDE_SHORT[1], h=self.WIDE_SHORT[0])
+
+        with caplog.at_level("WARNING"):
+            for _ in range(5):
+                p._to_gray(img)
+
+        hits = [r for r in caplog.records if "below the" in r.getMessage()]
+        assert len(hits) == 1, f"expected one warning per shape, got {len(hits)}"
+
+    def test_normal_aspect_ratios_still_downscale(self):
+        """The guard must not disable the optimisation for ordinary frames."""
+        p = SSIMProcessor(cfg(ssim_eval_width=480))
+        img = frame(6, w=2592, h=1520)
+
+        assert p._to_gray(img).shape == (281, 480)
