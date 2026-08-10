@@ -7,6 +7,11 @@ FrameSelect release notes
 
 - Bump the openfilter dependency to 1.2.2
 
+## v1.4.0 - 2026-08-10
+
+### Changed
+- SSIM is computed with `cv2.boxFilter` instead of `skimage.metrics.structural_similarity`. Same estimator, same window, same crop; scikit-image averages each window with `scipy.ndimage.uniform_filter`, which is single-threaded scalar code, while OpenCV does it with SIMD. This is a cost change only: measured agreement with the previous result is within **1.1e-13** across every frame shape and window size the filter can produce, so no keep decision changes. It matters because the dedup is the stage that binds the CPD pipeline and SSIM is the bulk of its per-frame cost.
+
 ## v1.3.2 - 2026-08-10
 
 ### Fixed
