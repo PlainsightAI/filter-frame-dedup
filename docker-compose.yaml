@@ -1,6 +1,6 @@
 services:
   video_in:
-    image: containers.openfilter.io/plainsightai/openfilter-video-in:1.2.1
+    image: containers.openfilter.io/plainsightai/openfilter-video-in:1.2.2
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       FILTER_ID: VideoIn
@@ -9,7 +9,7 @@ services:
     volumes:
       - ${VIDEO_INPUT:-./data/sample-video.mp4}:/video.mp4
   frame_dedup_filter:
-    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.2.1
+    image: containers.openfilter.io/plainsightai/openfilter-frame-dedup:1.2.2
     env_file:
       - path: .env
         required: false
@@ -23,7 +23,7 @@ services:
       - ${HOST_OUTPUT:-./output}:/output
 
   webvis:
-    image: containers.openfilter.io/plainsightai/openfilter-webvis:1.2.1
+    image: containers.openfilter.io/plainsightai/openfilter-webvis:1.2.2
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       FILTER_ID: Webvis

@@ -3,10 +3,12 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.2.2 - 2026-08-10
+
 ### Changed
 
 - Build the image on `openfilter-base` (weekly apt-upgraded python-slim) instead of a stale `python:X.Y.Z-slim` pin, clearing the OS-package CVEs the pin carried.
-- Bump the openfilter dependency to 1.2.2
+- Update the openfilter dependency to 1.2.2
 
 ## v1.2.1 - 2026-08-04
 
@@ -39,7 +41,6 @@ FrameSelect release notes
 ### Changed
 - Added handling of different model types (e.g. resnet)
 
-
 ## v1.1.5 - 2026-06-23
 
 ### Changed
@@ -57,13 +58,11 @@ FrameSelect release notes
 - Remove redundant ci.yaml (shared workflow handles PR testing)
 - Add push + pull_request triggers to create-release.yaml
 
-
 ## v1.1.2 - 2026-04-15
 
 ### Changed
 - Add CI/CD workflows: create-release.yaml (Docker Hub publishing), ci.yaml (PR testing), security-scan.yaml
 - Update openfilter dependency to >=0.1.27
-
 
 ## v1.1.1 - 2025-09-27
 
@@ -122,7 +121,6 @@ FrameSelect release notes
   - Fixed `invalid source 't'` error by properly calling parent class `normalize_config`
   - Resolved string-to-type conversion issues in configuration validation
   - Fixed boolean flag validation to handle string inputs correctly
-
 
 ## v1.0.13 - 2025-07-15
 - Migrated from filter_runtime to openfilter
