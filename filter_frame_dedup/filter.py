@@ -36,6 +36,7 @@ class FilterFrameDedupConfig(FilterConfig):
     motion_gate_eval_width:             int = 480                           # Evaluation width for motion gatekeeper
     motion_gate_patch_grid_size:        int = 1                             # Grid dimension L for LxL patch-based motion gating
     ssim_patch_grid_size:               int = 1                             # Grid dimension L for LxL patch-based SSIM comparison
+    ssim_eval_width:                    int = 0                             # Downscale width for SSIM comparison; 0 = full resolution
     
 class FilterFrameDedup(Filter):
     """
@@ -101,6 +102,8 @@ class FilterFrameDedup(Filter):
                 config['motion_gate_patch_grid_size'] = int(config['motion_gate_patch_grid_size'])
             if 'ssim_patch_grid_size' in config and isinstance(config['ssim_patch_grid_size'], str):
                 config['ssim_patch_grid_size'] = int(config['ssim_patch_grid_size'])
+            if 'ssim_eval_width' in config and isinstance(config['ssim_eval_width'], str):
+                config['ssim_eval_width'] = int(config['ssim_eval_width'])
             if 'active_processors' in config and isinstance(config['active_processors'], str):
                 val = config['active_processors'].strip()
                 if val.startswith('[') and val.endswith(']'):
@@ -174,6 +177,17 @@ class FilterFrameDedup(Filter):
             raise ValueError("Motion gate patch grid size must be positive")
         if config.ssim_patch_grid_size <= 0:
             raise ValueError("SSIM patch grid size must be positive")
+        # 0 means "full resolution", any other negative value is a mistake rather than
+        # a smaller image, and would otherwise be silently ignored by the resize guard.
+        # Below 7 there is nothing to compare: scikit-image's default SSIM window is
+        # 7x7, and a dedup decision taken on a 6px-wide image is meaningless anyway.
+        if config.ssim_eval_width < 0:
+            raise ValueError("SSIM evaluation width must be 0 (full resolution) or positive")
+        if 0 < config.ssim_eval_width < 7:
+            raise ValueError(
+                "SSIM evaluation width must be 0 (full resolution) or at least 7; "
+                f"got {config.ssim_eval_width}, which is smaller than the SSIM window"
+            )
         
         # Validate ROI if provided
         if config.roi is not None:

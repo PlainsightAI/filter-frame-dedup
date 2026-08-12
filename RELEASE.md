@@ -3,6 +3,27 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.3.2 - 2026-08-10
+
+### Fixed
+- `ssim_eval_width` could silently disable deduplication on extreme aspect ratios. Config validation bounds the configured *width*, but the height scales independently and never reaches it: a wide, short frame (2592x10 at `ssim_eval_width=7`) reduces to 7x1, below the SSIM window, and `compute_ssim` then failed open on every frame. The filter kept everything instead of erroring, so dedup stopped working with no signal that it had. The downscale is now skipped for shapes that would cross the window and the comparison runs at full resolution: slower, and correct. The warning is logged once per frame shape rather than once per frame, since a stream holds its shape.
+
+## v1.3.1 - 2026-08-07
+
+### Fixed
+- An `ssim_eval_width` below 7 crashed the whole-frame SSIM path. scikit-image defaults to `win_size=7` and raises `win_size exceeds image extent` once the downscaled frame is smaller than that; the patch-grid path already clamped the window but the whole-frame path did not. Config now rejects `0 < ssim_eval_width < 7` with an explicit message, and `compute_ssim` clamps the window and fails open (score 0.0, so the frame is kept) for frames too small to compare at all.
+
+## v1.3.0 - 2026-08-07
+
+### Added
+- `ssim_eval_width`: compare frames for SSIM at a reduced width instead of full resolution. Default `0` keeps the current full-resolution behaviour. At `480` (the width the motion gatekeeper already uses) SSIM is **7.76x cheaper** on a 2592x1520 source, 213.5 ms -> 27.0 ms.
+
+  **Measure recall before turning this on.** The speedup is real, but it changes which frames survive, not only what they cost. In a full-pipeline A/B over the same 3600 frames, full resolution kept 783 frames (21.8%) and `480` kept 26 (0.7%) at the same threshold. Retuning the threshold to restore the keep *rate* does not restore the *decision*: at the threshold that matches the count, recall against the full-resolution keep set is **0.265**, so the two configurations keep a nearly disjoint set of frames. For a dedup feeding downstream detection, a frame this drops is one nothing else ever sees. The default is `0` for exactly this reason.
+
+### Changed
+- SSIM is computed with `full=False`. The previous `full=True` built a float SSIM map the size of the input on every frame and the caller discarded it; dropping it is **1.27x** on its own, 213.5 ms -> 168.5 ms.
+- `SSIMProcessor.should_save_frame` returns a real `bool` rather than `numpy.bool_`, matching its annotation.
+
 ## v1.2.2 - 2026-08-10
 
 ### Changed

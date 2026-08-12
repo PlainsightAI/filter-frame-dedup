@@ -6,6 +6,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# scikit-image's default SSIM window. A frame smaller than this in either dimension
+# cannot be compared at all, so it is also the floor a downscale must not cross.
+SSIM_WIN_SIZE = 7
+
 
 class SSIMProcessor:
     """
@@ -15,6 +19,48 @@ class SSIMProcessor:
         self.config = config
         self.prev_frame = None
         self.patch_grid_size = getattr(config, "ssim_patch_grid_size", 1)
+        self.eval_width = int(getattr(config, "ssim_eval_width", 0) or 0)
+        self._skipped_downscale_shapes: set[tuple[int, int]] = set()
+
+    def _to_gray(self, frame: np.ndarray) -> np.ndarray:
+        """Grayscale, optionally downscaled to ``ssim_eval_width`` first.
+
+        SSIM cost is linear in pixel count, and a dedup decision does not need full
+        resolution: the motion gatekeeper in this same filter already evaluates at
+        ``motion_gate_eval_width`` (480 by default) for exactly this reason. Resizing
+        before the colour conversion rather than after keeps the conversion cheap too.
+
+        Default is 0, meaning full resolution and byte-identical behaviour to before,
+        because downscaling shifts SSIM scores upward (it smooths sensor noise) and the
+        same ``ssim_threshold`` therefore keeps fewer frames. That is a recall change,
+        so it is opt-in and must be measured per deployment rather than assumed.
+
+        The downscale is skipped when it would drive either dimension below the SSIM
+        window. ``normalize_config`` bounds the configured *width*, but it cannot see
+        the frame: an extreme aspect ratio scales the height independently, so a wide,
+        short frame reaches a valid width with a height of 1 or 2. Comparing that is
+        impossible, ``compute_ssim`` would fail open on every frame, and the filter
+        would silently stop deduplicating instead of failing. Comparing at full
+        resolution is slower and correct, which is the right trade for an optimisation
+        that cannot apply to this shape.
+        """
+        if self.eval_width > 0 and frame.shape[1] > self.eval_width:
+            scale = self.eval_width / float(frame.shape[1])
+            height = max(1, int(round(frame.shape[0] * scale)))
+            if min(height, self.eval_width) >= SSIM_WIN_SIZE:
+                frame = cv2.resize(frame, (self.eval_width, height), interpolation=cv2.INTER_AREA)
+            else:
+                shape = (frame.shape[0], frame.shape[1])
+                if shape not in self._skipped_downscale_shapes:
+                    # Once per shape, not once per frame: a stream holds its shape, and
+                    # this would otherwise log on every frame at full frame rate.
+                    self._skipped_downscale_shapes.add(shape)
+                    logger.warning(
+                        "ssim_eval_width=%d would reduce a %dx%d frame to %dx%d, below the "
+                        "%dpx SSIM window; comparing at full resolution for this shape.",
+                        self.eval_width, shape[1], shape[0], self.eval_width, height, SSIM_WIN_SIZE,
+                    )
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def compute_ssim(self, frame1: np.ndarray, frame2: np.ndarray) -> float:
         """
@@ -27,10 +73,27 @@ class SSIMProcessor:
         Returns:
             SSIM score between the two frames
         """
-        gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-        gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-        score, _ = ssim(gray1, gray2, full=True)
-        return score
+        gray1 = self._to_gray(frame1)
+        gray2 = self._to_gray(frame2)
+        # scikit-image defaults to win_size=7 and raises "win_size exceeds image
+        # extent" on anything smaller, so clamp it the way the patch-grid path below
+        # already does. normalize_config rejects an eval width under the window, and
+        # _to_gray skips a downscale that would cross it, but a caller can still hand
+        # this method a tiny frame directly and a dedup filter should not crash the
+        # pipeline over a comparison it could simply decline.
+        min_dim = min(gray1.shape[0], gray1.shape[1], gray2.shape[0], gray2.shape[1])
+        if min_dim < 3:
+            # Too small to compare at all. Fail open: an uncomputable comparison must
+            # KEEP the frame, and 0.0 is "definitely different" against any threshold.
+            logger.warning("SSIM could not be computed for a %dpx frame; forcing keep frame.", min_dim)
+            return 0.0
+        win_size = min(SSIM_WIN_SIZE, min_dim)
+        if win_size % 2 == 0:
+            win_size = max(3, win_size - 1)
+        # full=False: only the scalar score is used. full=True additionally builds a
+        # float SSIM map the size of the input, which was allocated and discarded on
+        # every frame.
+        return ssim(gray1, gray2, full=False, win_size=win_size)
 
     def should_save_frame(self, image: np.ndarray) -> bool:
         """
@@ -47,9 +110,9 @@ class SSIMProcessor:
 
         if self.patch_grid_size > 1:
             L = self.patch_grid_size
-            gray1 = cv2.cvtColor(self.prev_frame, cv2.COLOR_BGR2GRAY)
-            gray2 = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
+            gray1 = self._to_gray(self.prev_frame)
+            gray2 = self._to_gray(image)
+
             sh, sw = gray1.shape[:2]
             patch_h = sh // L
             patch_w = sw // L
@@ -68,13 +131,13 @@ class SSIMProcessor:
                     # Compute SSIM for this patch
                     # Use a smaller win_size if the patch size is small
                     min_dim = min(gray1_patch.shape[:2])
-                    win_size = min(7, min_dim)
+                    win_size = min(SSIM_WIN_SIZE, min_dim)
                     # win_size must be odd and >= 3 for ssim
                     if win_size % 2 == 0:
                         win_size = max(3, win_size - 1)
                     
                     if min_dim >= 3:
-                        score, _ = ssim(gray1_patch, gray2_patch, full=True, win_size=win_size)
+                        score = ssim(gray1_patch, gray2_patch, full=False, win_size=win_size)
                     else:
                         # Fallback for extremely small patches where SSIM cannot be computed.
                         # An uncomputable comparison must KEEP the frame (fail-open for a dedup
@@ -88,7 +151,8 @@ class SSIMProcessor:
             return False
         else:
             ssim_score = self.compute_ssim(self.prev_frame, image)
-            return ssim_score <= self.config.ssim_threshold 
+            # bool(): the comparison yields np.bool_, and the annotation says bool.
+            return bool(ssim_score <= self.config.ssim_threshold)
 
     def update_reference_frame(self, image: np.ndarray):
         """
