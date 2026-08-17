@@ -3,6 +3,10 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+### Changed
+
+- Bump the openfilter dependency to 1.3.0
+
 ## v1.3.3 - 2026-08-12
 
 ### Changed
