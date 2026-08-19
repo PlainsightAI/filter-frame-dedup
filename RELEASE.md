@@ -3,9 +3,11 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.3.4 - 2026-08-18
+
 ### Changed
 
-- Bump the openfilter dependency to 1.3.0
+- Update the openfilter dependency to 1.3.0
 - Add Python 3.14 support: raise the `requires-python` ceiling to `<3.15` and add 3.14 to the CI
   test matrix (3.10–3.13 unchanged). `scikit-image` is split by interpreter (`0.25.2` for
   3.10–3.13, `>=0.26.0` for 3.14, which is the first release with cp314 wheels). The image base
