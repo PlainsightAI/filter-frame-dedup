@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.4
-# openfilter-base = python:3.11-slim + all outstanding Debian security patches
+# openfilter-base = python:3.14-slim + all outstanding Debian security patches
 # (rebuilt weekly): provides the PYTHONDONTWRITEBYTECODE/PYTHONUNBUFFERED env, the
 # appuser account, and /app (WORKDIR) + /app/logs — so none of that is repeated here.
-FROM plainsightai/openfilter-base:py3.11
+FROM plainsightai/openfilter-base:py3.14
 
 # Install pip + filter-frame-dedup at version from VERSION file
 RUN --mount=type=bind,source=VERSION,target=/tmp/VERSION,ro \
