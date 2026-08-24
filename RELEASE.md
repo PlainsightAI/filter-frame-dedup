@@ -3,6 +3,11 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+### Fixed
+
+- `frame-dedup` was the slowest stage in the CPD pipeline, 43.8 ms per input frame against 4.1 ms for the RT-DETR detector it exists to protect (PLAT-1471), and the cause was one line rather than the design. `INTER_AREA` is what makes these hashes stable, but reducing a 1080p frame straight to 32x32 with it averages over ~60x60 kernels: **7.52 ms per call**, measured, and each of `compute_phash` / `compute_ahash` / `compute_dhash` re-derived its own grayscale from full resolution and paid it again. Three hashes cost **15.17 ms per frame**. They now share one cheap `INTER_NEAREST` step down to 240x135, with `INTER_AREA` applied from there, so the averaging the hash relies on still happens but on a small image: **0.39 ms for all three, 39x less**. The grayscale itself is derived once per frame instead of five times.
+- **Migration: none, but the hashes are not bit-identical.** What `hash_threshold` compares is the distance between consecutive frames, and that is preserved. Measured on 59 consecutive-frame pairs of a 1080p street clip: at the default `hash_threshold=5` the accept/reject decision was identical, 34/59 either way; at 10 it differed on one pair; at 3 it differed on six, which is a regime where dedup is already accepting 75% of frames and doing little. A pipeline pinned to a threshold below 5 should re-check its drop rate.
+
 ## v1.3.5 - 2026-08-18
 
 ### Changed
