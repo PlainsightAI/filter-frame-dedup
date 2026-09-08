@@ -2,6 +2,7 @@
 title: FrameSelect
 sidebar_label: Overview
 sidebar_position: 1
+slug: /filters/frame-select/overview
 ---
 
 import Admonition from '@theme/Admonition';
