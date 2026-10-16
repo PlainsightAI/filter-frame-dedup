@@ -8,6 +8,13 @@ FrameSelect release notes
 - Bump the openfilter dependency to 1.5.0
 - Bump the openfilter dependency to 1.5.1
 
+## v1.3.7 - 2026-10-16
+
+### Fixed
+
+- A frame whose size differs from the stored reference killed the filter. `is_motion_detected` subtracts the two with `cv2.absdiff`, which raises `(-209:Sizes of input arguments do not match)` rather than returning a score, and nothing caught it. Any pipeline where a single `video_in` reads several sources in sequence hits this at the first resolution change: on an FDC batch, 1920x1080 followed by 1366x720 ended the process at the clip boundary, and because a dead dedup never forwards end-of-stream, every filter after it waited forever instead of finishing. A different frame size is a different source, not a changed scene, so it now counts as motion: the frame passes and becomes the new reference. Same-size comparison is untouched, and the hashes were already resolution-independent.
+
+
 ## v1.3.6 - 2026-09-23
 
 ### Changed
