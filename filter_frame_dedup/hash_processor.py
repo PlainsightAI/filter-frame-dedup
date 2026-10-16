@@ -147,7 +147,9 @@ class HashFrameProcessor:
         diff = cv2.absdiff(gray_prev, gray_curr)
         _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
         non_zero_count = np.count_nonzero(thresh)
-        return non_zero_count > self.config.motion_threshold
+        # bool(): np.count_nonzero is np.int64 on numpy >= 2.4, so the comparison
+        # yields np.bool_, and the annotation says bool.
+        return bool(non_zero_count > self.config.motion_threshold)
 
     def should_process_frame(self, image: np.ndarray) -> bool:
         """
