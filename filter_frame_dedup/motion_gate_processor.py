@@ -40,6 +40,13 @@ class FastMotionGatekeeper:
         if self.prev_gray is None:
             return True
 
+        # _to_gray scales height by the aspect ratio, so a source change reaches
+        # here as a different shape (1920x1080 becomes 480x270, 1366x720 becomes
+        # 480x253) and cv2.absdiff raises on it rather than returning a delta. A
+        # different size is a different source, not a static frame: let it pass.
+        if self.prev_gray.shape != gray.shape:
+            return True
+
         if self.patch_grid_size > 1:
             L = self.patch_grid_size
             sh, sw = gray.shape[:2]

@@ -122,6 +122,18 @@ class SSIMProcessor:
         """
         gray1 = self._to_gray(frame1)
         gray2 = self._to_gray(frame2)
+        if gray1.shape != gray2.shape:
+            # A frame of a different size is a different source, not a changed scene.
+            # The box filters below multiply the two arrays together, so a mismatch
+            # raises instead of scoring, and nothing in the pipeline catches it. Take
+            # the same exit as any other comparison that cannot be computed: fail open
+            # with 0.0, which keeps the frame and makes it the new reference.
+            logger.warning(
+                "SSIM could not be computed for a %dx%d frame against a %dx%d reference; "
+                "forcing keep frame.",
+                gray2.shape[1], gray2.shape[0], gray1.shape[1], gray1.shape[0],
+            )
+            return 0.0
         # scikit-image defaults to win_size=7 and raises "win_size exceeds image
         # extent" on anything smaller, so clamp it the way the patch-grid path below
         # already does. normalize_config rejects an eval width under the window, and
@@ -156,6 +168,17 @@ class SSIMProcessor:
             L = self.patch_grid_size
             gray1 = self._to_gray(self.prev_frame)
             gray2 = self._to_gray(image)
+
+            if gray1.shape != gray2.shape:
+                # Same reasoning as compute_ssim: patches cut from two differently
+                # sized frames cannot be compared, so keep the frame instead of
+                # raising. A patch of the larger frame is simply a different region.
+                logger.warning(
+                    "SSIM could not be computed for a %dx%d frame against a %dx%d "
+                    "reference; forcing keep frame.",
+                    gray2.shape[1], gray2.shape[0], gray1.shape[1], gray1.shape[0],
+                )
+                return True
 
             sh, sw = gray1.shape[:2]
             patch_h = sh // L
