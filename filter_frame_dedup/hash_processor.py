@@ -133,12 +133,23 @@ class HashFrameProcessor:
         """
         prev_roi = self.extract_roi(prev_frame)
         curr_roi = self.extract_roi(curr_frame)
+        # A frame of a different size is a different source, not a changed
+        # scene, and absdiff raises on mismatched shapes rather than returning
+        # anything. This happens on every resolution change inside a folder-mode
+        # batch, where one video_in reads many clips in sequence: it killed the
+        # filter at the first 1920x1080 -> 1366x720 boundary and took the rest
+        # of the batch with it. Count it as motion, which also makes the caller
+        # replace the reference frame with this one.
+        if prev_roi.shape != curr_roi.shape:
+            return True
         gray_prev = cv2.cvtColor(prev_roi, cv2.COLOR_BGR2GRAY)
         gray_curr = cv2.cvtColor(curr_roi, cv2.COLOR_BGR2GRAY)
         diff = cv2.absdiff(gray_prev, gray_curr)
         _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
         non_zero_count = np.count_nonzero(thresh)
-        return non_zero_count > self.config.motion_threshold
+        # bool(): np.count_nonzero is np.int64 on numpy >= 2.4, so the comparison
+        # yields np.bool_, and the annotation says bool.
+        return bool(non_zero_count > self.config.motion_threshold)
 
     def should_process_frame(self, image: np.ndarray) -> bool:
         """

@@ -3,10 +3,17 @@ FrameSelect release notes
 
 ## [Unreleased]
 
+## v1.3.7 - 2026-10-16
+
 ### Changed
 
 - Bump the openfilter dependency to 1.5.0
 - Bump the openfilter dependency to 1.5.1
+
+### Fixed
+
+- A frame whose size differs from the stored reference killed the filter. Three processors subtract the two frames and none survives a mismatch: `hash_processor.is_motion_detected` and `motion_gate_processor.should_process_frame` call `cv2.absdiff`, which raises `(-209:Sizes of input arguments do not match)` rather than returning a score, and `ssim_processor` multiplies the two arrays in `_ssim_boxfilter`, which raises `operands could not be broadcast together`. Nothing catches any of them. Any pipeline where a single `video_in` reads several sources in sequence hits this at the first resolution change: on an FDC batch, 1920x1080 followed by 1366x720 ended the process at the clip boundary, and because a dead dedup never forwards end-of-stream, every filter after it waited forever instead of finishing. A different frame size is a different source, not a changed scene, so it now counts as motion in both `absdiff` processors, and `ssim_processor` declines the comparison the way it already declines an uncomputable one, failing open with `0.0` and a warning. Either way the frame passes and becomes the new reference. Same-size comparison is untouched, and the hashes were already resolution-independent.
+- `is_motion_detected` returned `np.bool_` rather than `bool` from a method annotated `-> bool`: `np.count_nonzero` is `np.int64` on numpy >= 2.4, so the comparison is a numpy scalar. It is cast at the source now, matching `ssim_processor.should_save_frame`.
 
 ## v1.3.6 - 2026-09-23
 
