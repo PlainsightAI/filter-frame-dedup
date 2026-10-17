@@ -128,10 +128,14 @@ class SSIMProcessor:
             # raises instead of scoring, and nothing in the pipeline catches it. Take
             # the same exit as any other comparison that cannot be computed: fail open
             # with 0.0, which keeps the frame and makes it the new reference.
+            # The originals, not gray1/gray2: with eval_width set those are the
+            # downscaled copies, so the line named 480x253 against 480x270 for a
+            # 1366x720 frame meeting a 1920x1080 reference. The sizes that
+            # changed are the ones worth searching a log for.
             logger.warning(
                 "SSIM could not be computed for a %dx%d frame against a %dx%d reference; "
                 "forcing keep frame.",
-                gray2.shape[1], gray2.shape[0], gray1.shape[1], gray1.shape[0],
+                frame2.shape[1], frame2.shape[0], frame1.shape[1], frame1.shape[0],
             )
             return 0.0
         # scikit-image defaults to win_size=7 and raises "win_size exceeds image
@@ -173,10 +177,12 @@ class SSIMProcessor:
                 # Same reasoning as compute_ssim: patches cut from two differently
                 # sized frames cannot be compared, so keep the frame instead of
                 # raising. A patch of the larger frame is simply a different region.
+                # Originals here too, for the same reason as compute_ssim.
                 logger.warning(
                     "SSIM could not be computed for a %dx%d frame against a %dx%d "
                     "reference; forcing keep frame.",
-                    gray2.shape[1], gray2.shape[0], gray1.shape[1], gray1.shape[0],
+                    image.shape[1], image.shape[0],
+                    self.prev_frame.shape[1], self.prev_frame.shape[0],
                 )
                 return True
 
