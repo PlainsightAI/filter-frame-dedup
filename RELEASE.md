@@ -7,6 +7,7 @@ FrameSelect release notes
 
 - Bump the openfilter dependency to 1.5.0
 - Bump the openfilter dependency to 1.5.1
+- **Breaking:** Drop support for Python 3.10; `requires-python` is now `>=3.11`. Pillow 13.0.0, the first release with fixes for several critical advisories, requires Python 3.11, so the 3.10 environment could not be secured. The CI test matrix now runs 3.11–3.14.
 
 ## v1.3.6 - 2026-09-23
 
